@@ -1,2 +1,2 @@
-# hawkeye
+# Hawkeye
 Hawkeye juggling video analysis
