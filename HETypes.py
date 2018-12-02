@@ -2,7 +2,7 @@
 #
 # Data types used by Hawkeye to describe/annotate juggling videos.
 #
-# Jack Boyce (jboyce@gmail.com)
+# Copyright 2018 Jack Boyce (jboyce@gmail.com)
 
 from math import sqrt, sin, cos, acos
 import statistics

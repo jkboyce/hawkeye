@@ -2,7 +2,7 @@
 #
 # Python class to extract features from a juggling video.
 #
-# Jack Boyce (jboyce@gmail.com)
+# Copyright 2018 Jack Boyce (jboyce@gmail.com)
 
 import sys
 import os
