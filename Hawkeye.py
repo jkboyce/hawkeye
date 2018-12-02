@@ -2,7 +2,7 @@
 #
 # Hawkeye application window and main entry point.
 #
-# Jack Boyce (jboyce@gmail.com)
+# Copyright 2018 Jack Boyce (jboyce@gmail.com)
 
 import os
 import sys
@@ -10,21 +10,21 @@ import time
 import platform
 from math import log10, ceil, floor, atan, pi
 
-from PyQt5.QtCore import (QDir, QSize, Qt, QUrl, QPoint, QPointF, QThread,
-                          pyqtSignal, pyqtSlot)
-from PyQt5.QtGui import (QPainter, QFont, QTextCursor, QPainterPath, QIcon,
-                         QPen, QColor)
-from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
-                             QPushButton, QSizePolicy, QSlider, QStyle,
-                             QVBoxLayout, QWidget, QGraphicsView,
-                             QGraphicsScene, QListWidget, QListWidgetItem,
-                             QSplitter, QStackedWidget, QPlainTextEdit,
-                             QProgressBar, QMainWindow, QAction, QComboBox,
-                             QAbstractItemView, QToolButton, QCheckBox,
-                             QTableWidget, QTableWidgetItem,
-                             QStyledItemDelegate)
-from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
-from PyQt5.QtMultimediaWidgets import QGraphicsVideoItem
+from PySide2.QtCore import (QDir, QSize, Qt, QUrl, QPoint, QPointF, QThread,
+                            Signal, Slot)
+from PySide2.QtGui import (QPainter, QFont, QTextCursor, QPainterPath, QIcon,
+                           QPen, QColor)
+from PySide2.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
+                               QPushButton, QSizePolicy, QSlider, QStyle,
+                               QVBoxLayout, QWidget, QGraphicsView,
+                               QGraphicsScene, QListWidget, QListWidgetItem,
+                               QSplitter, QStackedWidget, QPlainTextEdit,
+                               QProgressBar, QMainWindow, QAction, QComboBox,
+                               QAbstractItemView, QToolButton, QCheckBox,
+                               QTableWidget, QTableWidgetItem,
+                               QStyledItemDelegate)
+from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
+from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
 from HEWorker import HEWorker
 
@@ -35,17 +35,17 @@ class HEMainWindow(QMainWindow):
     """
 
     # signal that informs the worker of a new video to process
-    sig_new_work = pyqtSignal(str)
+    sig_new_work = Signal(str)
 
     # signal that informs the worker of new display preferences
-    sig_new_prefs = pyqtSignal(dict)
+    sig_new_prefs = Signal(dict)
 
     # signal that tells the worker to initiate application quit
-    sig_worker_quit = pyqtSignal()
+    sig_worker_quit = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
-        self.setWindowTitle('Hawkeye Juggling Video Analysis')
+        self.setWindowTitle('Hawkeye')
 
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
@@ -77,26 +77,30 @@ class HEMainWindow(QMainWindow):
         Build all the UI elements in the application window.
         """
         self.makeMenus()
-        widget_lists = self.makeListsWidget()
-        widget_player = self.makePlayerWidget()
-        widget_prefs = self.makePrefsWidget()
-        widget_output = self.makeScannerOutputWidget()
-        widget_stats = self.makeStatsWidget()
-        widget_data = self.makeDataWidget()
+        lists_widget = self.makeListsWidget()
+        player_widget = self.makePlayerWidget()
+        prefs_widget = self.makePrefsWidget()
+        output_widget = self.makeScannerOutputWidget()
+        stats_widget = self.makeStatsWidget()
+        data_widget = self.makeDataWidget()
+        about_widget = self.makeAboutWidget()
 
         # assemble window contents
         self.player_stackedWidget = QStackedWidget()
-        self.player_stackedWidget.addWidget(widget_player)
-        self.player_stackedWidget.addWidget(widget_prefs)
+        self.player_stackedWidget.addWidget(player_widget)
+        self.player_stackedWidget.addWidget(prefs_widget)
+        self.player_stackedWidget.setCurrentIndex(0)
 
         self.views_stackedWidget = QStackedWidget()
         self.views_stackedWidget.addWidget(self.player_stackedWidget)
-        self.views_stackedWidget.addWidget(widget_output)
-        self.views_stackedWidget.addWidget(widget_stats)
-        self.views_stackedWidget.addWidget(widget_data)
+        self.views_stackedWidget.addWidget(output_widget)
+        self.views_stackedWidget.addWidget(stats_widget)
+        self.views_stackedWidget.addWidget(data_widget)
+        self.views_stackedWidget.addWidget(about_widget)
+        self.views_stackedWidget.setCurrentIndex(4)
 
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(widget_lists)
+        splitter.addWidget(lists_widget)
         splitter.addWidget(self.views_stackedWidget)
         splitter.setCollapsible(1, False)
 
@@ -122,26 +126,26 @@ class HEMainWindow(QMainWindow):
         Widget for the left side of the UI, containing the Video and View
         list elements.
         """
-        layout_left = QVBoxLayout()
+        lists_layout = QVBoxLayout()
         label = QLabel('Videos:')
         label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        layout_left.addWidget(label)
+        lists_layout.addWidget(label)
         self.videoList = HEVideoList(self)
         self.videoList.itemSelectionChanged.connect(self.on_video_selected)
         self.videoList.setSizePolicy(QSizePolicy.Preferred,
                                      QSizePolicy.Expanding)
-        layout_left.addWidget(self.videoList)
+        lists_layout.addWidget(self.videoList)
         label = QLabel('View:')
         label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        layout_left.addWidget(label)
+        lists_layout.addWidget(label)
         self.viewList = HEViewList()
         self.viewList.itemSelectionChanged.connect(self.on_view_selected)
         self.viewList.setSizePolicy(QSizePolicy.Preferred,
                                     QSizePolicy.Expanding)
-        layout_left.addWidget(self.viewList)
-        widget_left = QWidget()
-        widget_left.setLayout(layout_left)
-        return widget_left
+        lists_layout.addWidget(self.viewList)
+        lists_widget = QWidget()
+        lists_widget.setLayout(lists_layout)
+        return lists_widget
 
     def makePlayerWidget(self):
         """
@@ -196,39 +200,45 @@ class HEMainWindow(QMainWindow):
                 QStyle.SP_MediaSkipForward))
         self.forwardButton.clicked.connect(self.stepForward)
 
-        controlLayout = QHBoxLayout()
-        controlLayout.setContentsMargins(0, 0, 0, 0)
-        controlLayout.addWidget(self.zoomInButton)
-        controlLayout.addWidget(self.zoomOutButton)
-        controlLayout.addWidget(self.playButton)
-        controlLayout.addWidget(self.positionSlider)
-        controlLayout.addWidget(self.playbackRate)
-        controlLayout.addWidget(self.backButton)
-        controlLayout.addWidget(self.forwardButton)
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.addWidget(self.zoomInButton)
+        controls_layout.addWidget(self.zoomOutButton)
+        controls_layout.addWidget(self.playButton)
+        controls_layout.addWidget(self.positionSlider)
+        controls_layout.addWidget(self.playbackRate)
+        controls_layout.addWidget(self.backButton)
+        controls_layout.addWidget(self.forwardButton)
 
-        errorbarLayout = QHBoxLayout()
-        errorbarLayout.setContentsMargins(0, 0, 7, 0)
+        errorbar_layout = QHBoxLayout()
+        errorbar_layout.setContentsMargins(0, 0, 7, 0)
         self.playerErrorLabel = QLabel()
         # self.playerErrorLabel.setText('This is where error output goes.')
         self.playerErrorLabel.setSizePolicy(QSizePolicy.Preferred,
                                             QSizePolicy.Maximum)
-        errorbarLayout.addWidget(self.playerErrorLabel)
+        aboutButton = QToolButton()
+        aboutButton.setIcon(QIcon('about_icon.png'))
+        aboutButton.setIconSize(QSize(20, 20))
+        aboutButton.setStyleSheet('border: none;')
+        aboutButton.clicked.connect(self.showAbout)
         prefsButton = QToolButton()
-        prefsButton.setIcon(QIcon('settings_icon_1.png'))
+        prefsButton.setIcon(QIcon('settings_icon.png'))
         prefsButton.setIconSize(QSize(20, 20))
         prefsButton.setStyleSheet('border: none;')
         prefsButton.clicked.connect(self.showPrefs)
-        errorbarLayout.addWidget(prefsButton)
+        errorbar_layout.addWidget(self.playerErrorLabel)
+        errorbar_layout.addWidget(aboutButton)
+        errorbar_layout.addWidget(prefsButton)
 
-        layout_player = QVBoxLayout()
+        player_layout = QVBoxLayout()
         # layout_right_player.setContentsMargins(0, 10, 0, 0)
         self.view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        layout_player.addWidget(self.view)
-        layout_player.addLayout(controlLayout)
-        layout_player.addLayout(errorbarLayout)
-        widget_player = QWidget()
-        widget_player.setLayout(layout_player)
-        return widget_player
+        player_layout.addWidget(self.view)
+        player_layout.addLayout(controls_layout)
+        player_layout.addLayout(errorbar_layout)
+        player_widget = QWidget()
+        player_widget.setLayout(player_layout)
+        return player_widget
 
     def makePrefsWidget(self):
         """
@@ -241,39 +251,52 @@ class HEMainWindow(QMainWindow):
         self.prefs_ideal_throws = QCheckBox(
                     'Ideal throw points and angles')
 
-        resolutionLayout = QHBoxLayout()
-        resolutionLayout.setAlignment(Qt.AlignLeft)
-        resolutionLayout.addWidget(QLabel(
+        resolution_layout = QHBoxLayout()
+        resolution_layout.setAlignment(Qt.AlignLeft)
+        resolution_layout.addWidget(QLabel(
                     'Maximum video display resolution (vertical pixels):'))
         resolutions = ['480', '720', '1080', 'Actual size']
         self.prefs_resolution = QComboBox()
         for index, rate in enumerate(resolutions):
             self.prefs_resolution.insertItem(index, rate)
         self.prefs_resolution.setEditable(False)
-        resolutionLayout.addWidget(self.prefs_resolution)
+        resolution_layout.addWidget(self.prefs_resolution)
 
-        buttonsLayout = QHBoxLayout()
-        buttonsLayout.setAlignment(Qt.AlignRight)
+        controls_layout = QVBoxLayout()
+        controls_layout.setContentsMargins(10, 0, 30, 0)
+        controls_layout.setAlignment(Qt.AlignVCenter)
+        controls_layout.addWidget(QLabel('Video display options:'))
+        controls_layout.addWidget(self.prefs_markers)
+        controls_layout.addWidget(self.prefs_torso)
+        controls_layout.addWidget(self.prefs_parabolas)
+        controls_layout.addWidget(self.prefs_throwlabels)
+        controls_layout.addWidget(self.prefs_ideal_throws)
+        controls_layout.addLayout(resolution_layout)
+        controls_widget = QWidget()
+        controls_widget.setLayout(controls_layout)
+        controls_widget.setSizePolicy(QSizePolicy.Preferred,
+                                      QSizePolicy.Expanding)
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         cancelButton = QPushButton('Cancel')
         cancelButton.clicked.connect(self.cancelPrefs)
         acceptButton = QPushButton('Accept')
         acceptButton.clicked.connect(self.setPrefs)
-        buttonsLayout.addWidget(cancelButton)
-        buttonsLayout.addWidget(acceptButton)
+        buttons_layout.addWidget(cancelButton)
+        buttons_layout.addWidget(acceptButton)
+        buttons_widget = QWidget()
+        buttons_widget.setLayout(buttons_layout)
+        buttons_widget.setSizePolicy(QSizePolicy.Preferred,
+                                     QSizePolicy.Preferred)
 
-        layout_prefs = QVBoxLayout()
-        layout_prefs.setAlignment(Qt.AlignVCenter)
-        layout_prefs.addWidget(QLabel('Video display options:'))
-        layout_prefs.addWidget(self.prefs_markers)
-        layout_prefs.addWidget(self.prefs_torso)
-        layout_prefs.addWidget(self.prefs_parabolas)
-        layout_prefs.addWidget(self.prefs_throwlabels)
-        layout_prefs.addWidget(self.prefs_ideal_throws)
-        layout_prefs.addLayout(resolutionLayout)
-        layout_prefs.addLayout(buttonsLayout)
-        widget_prefs = QWidget()
-        widget_prefs.setLayout(layout_prefs)
-        return widget_prefs
+        prefs_layout = QVBoxLayout()
+        prefs_layout.addWidget(controls_widget)
+        prefs_layout.addWidget(buttons_widget)
+        prefs_widget = QWidget()
+        prefs_widget.setLayout(prefs_layout)
+        return prefs_widget
 
     def makeScannerOutputWidget(self):
         """
@@ -292,22 +315,22 @@ class HEMainWindow(QMainWindow):
         self.progressBar = QProgressBar()
         self.progressBar.setRange(0, 0)
 
-        layout_output = QVBoxLayout()
+        output_layout = QVBoxLayout()
         label = QLabel('Scanner output:')
         label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        layout_output.addWidget(label)
-        layout_output.addWidget(self.outputWidget)
-        layout_output.addWidget(self.progressBar)
-        widget_output = QWidget()
-        widget_output.setLayout(layout_output)
-        return widget_output
+        output_layout.addWidget(label)
+        output_layout.addWidget(self.outputWidget)
+        output_layout.addWidget(self.progressBar)
+        output_widget = QWidget()
+        output_widget.setLayout(output_layout)
+        return output_widget
 
     def makeStatsWidget(self):
         """
         A chart depicting descriptive information for a given run. This uses
         the custom widget HEStatsChart to do the display.
         """
-        layout_stats = QVBoxLayout()
+        stats_layout = QVBoxLayout()
         layout_runselect = QHBoxLayout()
         layout_runselect.setAlignment(Qt.AlignLeft)
         layout_runselect.addWidget(QLabel('Run:'))
@@ -315,38 +338,100 @@ class HEMainWindow(QMainWindow):
         self.stats_run.setEditable(False)
         self.stats_run.currentIndexChanged.connect(self.statsRunChanged)
         layout_runselect.addWidget(self.stats_run)
-        layout_stats.addLayout(layout_runselect)
+        stats_layout.addLayout(layout_runselect)
         self.chartWidget = HEStatsChart(self)
         self.chartWidget.setSizePolicy(QSizePolicy.Expanding,
                                        QSizePolicy.Expanding)
-        layout_stats.addWidget(self.chartWidget)
-        widget_stats = QWidget()
-        widget_stats.setLayout(layout_stats)
-        return widget_stats
+        stats_layout.addWidget(self.chartWidget)
+        stats_widget = QWidget()
+        stats_widget.setLayout(stats_layout)
+        return stats_widget
 
     def makeDataWidget(self):
         """
         A table showing relevant data for each throw detected in the video.
         This data can be exported to a CSV file.
         """
-        layout_data = QVBoxLayout()
+        data_layout = QVBoxLayout()
         self.dataWidget = QTableWidget()
         self.dataWidget.verticalHeader().setVisible(False)
         self.dataWidget.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.dataWidget.setSizePolicy(QSizePolicy.Expanding,
                                       QSizePolicy.Expanding)
         self.dataWidget.setShowGrid(False)
-        buttonLayout = QHBoxLayout()
-        buttonLayout.setAlignment(Qt.AlignRight)
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignRight)
         exportButton = QPushButton('Export as CSV')
         exportButton.clicked.connect(self.exportData)
-        buttonLayout.addWidget(exportButton)
+        button_layout.addWidget(exportButton)
 
-        layout_data.addWidget(self.dataWidget)
-        layout_data.addLayout(buttonLayout)
-        widget_data = QWidget()
-        widget_data.setLayout(layout_data)
-        return widget_data
+        data_layout.addWidget(self.dataWidget)
+        data_layout.addLayout(button_layout)
+        data_widget = QWidget()
+        data_widget.setLayout(data_layout)
+        return data_widget
+
+    def makeAboutWidget(self):
+        """
+        The info panel that is shown on startup, or when the user clicks the
+        '?' icon in the lower right.
+        """
+        msg = ('<p><h2>Hawkeye Juggling Video Analyzer</h2></p>'
+               '<p>&copy; 2018 Jack Boyce (jboyce@gmail.com)</p>'
+               '<p>&nbsp;</p>'
+               '<p>This software processes video files given to it and tracks '
+               'objects moving through the air in parabolic trajectories. '
+               'Currently it detects balls only. For best results use video '
+               'with four or more objects, a high frame rate (60+ fps), '
+               'minimum motion blur, and good brightness separation between '
+               'the balls and background.</p>'
+               '<p>Drop a video file onto the <b>Videos:</b> box to begin!</p>'
+               '<p>Useful keyboard shortcuts when viewing video:</p>'
+               '<ul>'
+               '<li>space: toggle play/pause</li>'
+               '<li>arrow keys: step forward/backward by one frame (hold to '
+               'continue cueing)</li>'
+               '<li>z, x: step backward/forward by one throw</li>'
+               '<li>a, s: step backward/forward by one run</li>'
+               '</ul>'
+               '<p>&nbsp;</p>'
+               '<p><small>All portions of this software written by Jack Boyce '
+               'are provided under the MIT License. Other software '
+               'distributed as part of Hawkeye is done so under the terms of '
+               'their respective non-commercial licenses: '
+               'OpenCV version 3.4.1 (3-clause BSD License), '
+               'Qt version 5.6.2 (LGPL v2.1), '
+               'PySide2 version 5.6.0 (LGPL v2.1), '
+               'FFmpeg version 3.4.2 (LGPL v2.1).</small></p>'
+               )
+
+        text_widget = QLabel(msg)
+        text_widget.setWordWrap(True)
+        msg_layout = QHBoxLayout()
+        msg_layout.setContentsMargins(10, 0, 30, 0)
+        msg_layout.addWidget(text_widget)
+        msg_widget = QWidget()
+        msg_widget.setLayout(msg_layout)
+        msg_widget.setSizePolicy(QSizePolicy.Preferred,
+                                 QSizePolicy.Expanding)
+
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setAlignment(Qt.AlignRight | Qt.AlignBottom)
+        okButton = QPushButton('OK')
+        okButton.clicked.connect(self.cancelAbout)
+        button_layout.addWidget(okButton)
+        button_widget = QWidget()
+        button_widget.setLayout(button_layout)
+        button_widget.setSizePolicy(QSizePolicy.Preferred,
+                                    QSizePolicy.Preferred)
+
+        about_layout = QVBoxLayout()
+        about_layout.addWidget(msg_widget)
+        about_layout.addWidget(button_widget)
+        about_widget = QWidget()
+        about_widget.setLayout(about_layout)
+        return about_widget
 
     def startWorker(self):
         """
@@ -375,7 +460,7 @@ class HEMainWindow(QMainWindow):
         self.sig_new_prefs.emit(self.prefs)
         self.worker_queue_length = 0
 
-    @pyqtSlot(str, int, int)
+    @Slot(str, int, int)
     def on_worker_step(self, file_id: str, step: int, stepstotal: int):
         """
         Signaled by worker when there is a progress update on processing
@@ -393,7 +478,7 @@ class HEMainWindow(QMainWindow):
                     self.progressBar.setMaximum(stepstotal)
                 break
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def on_worker_output(self, file_id: str, output: str):
         """
         Signaled by worker when there is output from processing.
@@ -410,7 +495,7 @@ class HEMainWindow(QMainWindow):
                     self.outputWidget.moveCursor(QTextCursor.End)
                 break
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def on_worker_error(self, file_id: str, errormsg: str):
         """
         Signaled by worker when there is an error
@@ -429,7 +514,7 @@ class HEMainWindow(QMainWindow):
                     self.progressBar.hide()
                 break
 
-    @pyqtSlot(str, dict, dict, int)
+    @Slot(str, dict, dict, int)
     def on_worker_done(self, file_id: str, notes: dict, fileinfo: dict,
                        resolution: int):
         """
@@ -455,6 +540,7 @@ class HEMainWindow(QMainWindow):
                 item.setForeground(item._foreground)
 
                 if item is self.currentVideoItem:
+                    print('got here!')
                     wantpaused = True
                     if self.views_stackedWidget.currentIndex() == 0:
                         # movie is currently being viewed, retain current pause
@@ -475,7 +561,7 @@ class HEMainWindow(QMainWindow):
 
                 break
 
-    @pyqtSlot()
+    @Slot()
     def on_video_selected(self):
         """
         Called when a video is selected in the HEVideoList, either through
@@ -601,7 +687,7 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
-    @pyqtSlot()
+    @Slot()
     def on_view_selected(self):
         """
         Called when an item is selected in the View list, either through user
@@ -658,7 +744,7 @@ class HEMainWindow(QMainWindow):
             self.stats_run.insertItem(run_num, str(run_num + 1))
         self.stats_run.setCurrentText('1')
 
-    @pyqtSlot(int)
+    @Slot(int)
     def statsRunChanged(self, index):
         """
         Called when a new run is selected in the Stats view combo box.
@@ -768,7 +854,7 @@ class HEMainWindow(QMainWindow):
         self.dataWidget.resizeColumnsToContents()
         self.dataWidget.resizeRowsToContents()
 
-    @pyqtSlot()
+    @Slot()
     def exportData(self):
         """
         Called when the user clicks the 'Export as CSV' button in data view.
@@ -836,7 +922,7 @@ class HEMainWindow(QMainWindow):
         self.backButton.setEnabled(False)
         self.forwardButton.setEnabled(False)
 
-    @pyqtSlot()
+    @Slot()
     def exitCall(self):
         """
         Called when the user selects Quit in the menu, or clicks the close
@@ -847,7 +933,7 @@ class HEMainWindow(QMainWindow):
         """
         self.sig_worker_quit.emit()
 
-    @pyqtSlot()
+    @Slot()
     def togglePlay(self):
         """
         Called when the user clicks the play/pause button in the UI.
@@ -883,7 +969,7 @@ class HEMainWindow(QMainWindow):
             self.backButton.setEnabled(False)
             self.forwardButton.setEnabled(False)
 
-    @pyqtSlot()
+    @Slot()
     def showPrefs(self):
         """
         Called when the user clicks the preferences icon in the UI.
@@ -898,7 +984,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
         self.player_stackedWidget.setCurrentIndex(1)
 
-    @pyqtSlot()
+    @Slot()
     def setPrefs(self):
         """
         Called when the user clicks "Accept" in the preferences panel.
@@ -933,14 +1019,30 @@ class HEMainWindow(QMainWindow):
                     self.sig_new_work.emit(item._filepath)
                     self.worker_queue_length += 1
 
-    @pyqtSlot()
+    @Slot()
     def cancelPrefs(self):
         """
         Called when the user clicks "Cancel" in the preferences panel.
         """
         self.player_stackedWidget.setCurrentIndex(0)
 
-    @pyqtSlot()
+    @Slot()
+    def showAbout(self):
+        """
+        Called when the user clicks the about icon in the UI.
+        """
+        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
+            self.pauseMovie()
+        self.views_stackedWidget.setCurrentIndex(4)
+
+    @Slot()
+    def cancelAbout(self):
+        """
+        Called when the user clicks 'OK' in the about panel.
+        """
+        self.views_stackedWidget.setCurrentIndex(0)
+
+    @Slot()
     def zoomIn(self):
         """
         Called when the user clicks the zoom in button in the UI.
@@ -950,7 +1052,7 @@ class HEMainWindow(QMainWindow):
         self.view.videosnappedtoframe = False
         self.view.setDragMode(QGraphicsView.ScrollHandDrag)
 
-    @pyqtSlot()
+    @Slot()
     def zoomOut(self):
         """
         Called when the user clicks the zoom out button in the UI.
@@ -989,7 +1091,7 @@ class HEMainWindow(QMainWindow):
             return None
         return floor(position * self.currentVideoItem._notes['fps'] / 1000)
 
-    @pyqtSlot()
+    @Slot()
     def stepBack(self):
         """
         Called when the user clicks the 'back one frame' button in the UI.
@@ -1000,7 +1102,7 @@ class HEMainWindow(QMainWindow):
         newframenum = self.framenum() - 1
         self.setFramenum(newframenum)
 
-    @pyqtSlot()
+    @Slot()
     def stepForward(self):
         """
         Called when the user clicks the 'forward one frame' button in the UI.
@@ -1016,9 +1118,11 @@ class HEMainWindow(QMainWindow):
         Signaled by the QMediaPlayer when the state of the media changes from
         paused to playing, and vice versa.
         """
+        """
         state = self.mediaPlayer.state()
         status = self.mediaPlayer.mediaStatus()
-        print('media state = {}, status = {}'.format(state, status))
+        print(f'media state = {state}, status = {status}')
+        """
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.playButton.setIcon(
                     self.style().standardIcon(QStyle.SP_MediaPause))
@@ -1066,11 +1170,12 @@ class HEMainWindow(QMainWindow):
         """
         Signaled by the QMediaPlayer when the movie duration changes.
         """
-        self.positionSlider.setRange(0, duration)
-        if self.currentVideoItem is not None:
-            self.currentVideoItem._duration = duration
+        if duration > 0:
+            self.positionSlider.setRange(0, duration)
+            if self.currentVideoItem is not None:
+                self.currentVideoItem._duration = duration
 
-    @pyqtSlot(int)
+    @Slot(int)
     def on_rate_change(self, index):
         """
         Called when the user selects a playback rate on the dropdown menu.
@@ -1078,16 +1183,18 @@ class HEMainWindow(QMainWindow):
         self.mediaPlayer.setPlaybackRate(float(
                     self.playbackRate.currentText()))
 
-    @pyqtSlot()
+    @Slot()
     def handlePlayerError(self):
         self.playButton.setEnabled(False)
         err = self.mediaPlayer.errorString()
         code = self.mediaPlayer.error()
-        self.playerErrorLabel.setText('Error: {} (code {})'.format(err, code))
+        self.playerErrorLabel.setText(f'Error: {err} (code {code})')
+        """
         state = self.mediaPlayer.state()
         status = self.mediaPlayer.mediaStatus()
         print('player error, media state = {}, status = {}'.format(state,
                                                                    status))
+        """
 
     def keyPressEvent(self, e):
         """
@@ -1546,8 +1653,8 @@ class HEVideoView(QGraphicsView):
 
 class HEVideoList(QListWidget):
     """
-    Subclass of standard QListWidget so that we can implement drag-and-drop
-    of files onto the list.
+    Subclass of standard QListWidget that implements drag-and-drop of files
+    onto the list.
     """
     def __init__(self, parent):
         super().__init__(parent=parent)
@@ -1568,7 +1675,6 @@ class HEVideoList(QListWidget):
         workerfree = (self.window.worker_queue_length == 0)
         for url in e.mimeData().urls():
             filepath = os.path.abspath(url.toLocalFile())
-            # print('dropped file {}'.format(filename))
             item = self.addVideo(filepath)
             if workerfree and selectitem is None:
                 selectitem = item
@@ -1702,6 +1808,8 @@ if __name__ == '__main__':
     app.setQuitOnLastWindowClosed(False)
     window = HEMainWindow()
     window.show()
+    window.raise_()
+    app.setActiveWindow(window)
 
     if profile:
         import cProfile

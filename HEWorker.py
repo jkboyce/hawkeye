@@ -2,7 +2,7 @@
 #
 # Hawkeye worker thread for analyzing and transcoding videos.
 #
-# Jack Boyce (jboyce@gmail.com)
+# Copyright 2018 Jack Boyce (jboyce@gmail.com)
 
 import os
 import sys
@@ -11,7 +11,7 @@ import time
 import subprocess
 import platform
 
-from PyQt5.QtCore import QObject, QThread, pyqtSignal, pyqtSlot
+from PySide2.QtCore import QObject, QThread, Signal, Slot
 
 from HEVideoScanner import HEVideoScanner
 
@@ -31,33 +31,33 @@ class HEWorker(QObject):
     #    arg1(str) = video file_id
     #    arg2(int) = step #
     #    arg3(int) = max # of steps
-    sig_progress = pyqtSignal(str, int, int)
+    sig_progress = Signal(str, int, int)
 
     # signal output from processing
     #    arg1(str) = video file_id
     #    arg2(str) = processing output (should be appended to any prev. output)
-    sig_output = pyqtSignal(str, str)
+    sig_output = Signal(str, str)
 
     # signal that processing failed with an error
     #    arg1(str) = video file_id
     #    arg2(str) = error message
-    sig_error = pyqtSignal(str, str)
+    sig_error = Signal(str, str)
 
     # signal that processing is done for a video
     #    arg1(str) = video file_id
     #    arg2(dict) = notes dictionary for video
     #    arg3(dict) = fileinfo dictionary with file path names
     #    arg4(int) = resolution (vertical pixels) of converted video
-    sig_done = pyqtSignal(str, dict, dict, int)
+    sig_done = Signal(str, dict, dict, int)
 
     # signal that the app should quit
-    sig_quit = pyqtSignal()
+    sig_quit = Signal()
 
     def __init__(self, app=None):
         super().__init__()
         self._app = app
 
-    @pyqtSlot()
+    @Slot()
     def work(self):
         """
         Worker thread entry point. Periodically wake up and look for videos
@@ -348,14 +348,14 @@ class HEWorker(QObject):
 
         return p.returncode
 
-    @pyqtSlot(str)
+    @Slot(str)
     def on_new_work(self, file_id: str):
         """
         This slot gets signaled when there is a new video to process.
         """
         self._queue.append(file_id)
 
-    @pyqtSlot(dict)
+    @Slot(dict)
     def on_new_prefs(self, prefs: dict):
         """
         This slot gets signaled when there is a change to the display
@@ -367,7 +367,7 @@ class HEWorker(QObject):
         else:
             self._resolution = int(prefs['resolution'])
 
-    @pyqtSlot()
+    @Slot()
     def on_app_quit(self):
         """
         This slot gets signaled when the user wants to quit the app.
