@@ -222,7 +222,7 @@ class HEMainWindow(QMainWindow):
         aboutButton.setStyleSheet('border: none;')
         aboutButton.clicked.connect(self.showAbout)
         prefsButton = QToolButton()
-        prefsButton.setIcon(QIcon('settings_icon.png'))
+        prefsButton.setIcon(QIcon('preferences_icon.png'))
         prefsButton.setIconSize(QSize(20, 20))
         prefsButton.setStyleSheet('border: none;')
         prefsButton.clicked.connect(self.showPrefs)
