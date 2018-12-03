@@ -26,7 +26,8 @@ class Balltag:
 
 class Ballarc:
     """
-    Represents a parabolic trajectory through space (i.e. a throw)
+    Represents a parabolic trajectory through space. The 'tags' attribute is
+    the Balltag objects assigned to the arc.
     """
     def __init__(self):
         # assigned in processing steps 2 and 3:
@@ -229,7 +230,6 @@ class Ballarc:
         for x in results:
             val = ((A * x + B) * x + C) * x + D
             if abs(val) > 1e-2:
-                print('ERROR: f({}, {}, {}, {}; {}) = {}'.format(
-                        A, B, C, D, x, val))
+                print(f'ERROR: f({A}, {B}, {C}, {D}; {x}) = {val}')
 
         return results

@@ -540,7 +540,6 @@ class HEMainWindow(QMainWindow):
                 item.setForeground(item._foreground)
 
                 if item is self.currentVideoItem:
-                    print('got here!')
                     wantpaused = True
                     if self.views_stackedWidget.currentIndex() == 0:
                         # movie is currently being viewed, retain current pause

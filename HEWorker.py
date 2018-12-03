@@ -84,9 +84,9 @@ class HEWorker(QObject):
 
             errorstring = ''
             if not os.path.exists(file_path):
-                errorstring = 'File {} does not exist'.format(file_path)
+                errorstring = f'File {file_path} does not exist'
             elif not os.path.isfile(file_path):
-                errorstring = 'File {} is not a file'.format(file_path)
+                errorstring = f'File {file_path} is not a file'
             if errorstring != '':
                 self.sig_error.emit(file_id, errorstring)
                 del self._queue[0]
@@ -236,7 +236,7 @@ class HEWorker(QObject):
     def make_display_video(self, fileinfo, notes):
         """
         The video we display in the UI is not the original video, but a version
-        transcoded with FFMPEG. We transcode for two reasons:
+        transcoded with FFMPEG. We transcode for three reasons:
 
         1. The video player can't smoothly step backward a frame at a time
            unless every frame is coded as a keyframe. This is rarely the case
@@ -244,6 +244,8 @@ class HEWorker(QObject):
            specify the keyframe interval to be a single frame.
         2. For performance reasons we may want to limit the display resolution
            to a maximum value, in which case we want to rescale.
+        3. The video player on Windows gives an error when it loads a video
+           with no audio track. Fix this by adding a null audio track.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -269,17 +271,24 @@ class HEWorker(QObject):
 
         if displayvid_resolution == 0:
             # native resolution
-            args = ['-i', file_path, '-c:v', 'libx264',
-                    '-preset', 'faster', '-tune', 'fastdecode', '-crf',
+            args = ['-f', 'lavfi',
+                    '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                    '-i', file_path, '-shortest', '-c:v', 'libx264',
+                    '-preset', 'veryfast', '-tune', 'fastdecode', '-crf',
                     '20', '-vf', 'format=yuv420p', '-x264-params',
-                    'keyint=1', '-an', displayvid_path]
+                    'keyint=1', '-c:a', 'aac', '-map', '0:a', '-map', '1:v',
+                    displayvid_path]
         else:
             # reduced resolution
-            args = ['-i', file_path, '-c:v', 'libx264',
-                    '-preset', 'faster', '-tune', 'fastdecode', '-crf',
+            args = ['-f', 'lavfi',
+                    '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                    '-i', file_path, '-shortest', '-c:v', 'libx264',
+                    '-preset', 'veryfast', '-tune', 'fastdecode', '-crf',
                     '20', '-vf', 'scale=-2:' + str(displayvid_resolution) +
                     ',format=yuv420p', '-x264-params',
-                    'keyint=1', '-an', displayvid_path]
+                    'keyint=1', '-c:a', 'aac', '-map', '0:a', '-map', '1:v',
+                    displayvid_path]
+
         retcode = self.run_ffmpeg(args, file_id)
 
         if retcode != 0 or self._abort:
@@ -312,13 +321,12 @@ class HEWorker(QObject):
                 FFMPEG return code
         """
         if getattr(sys, 'frozen', False):
-                # running in a bundle
+            # running in a bundle
             ffmpeg_dir = sys._MEIPASS
         else:
-                # running in a normal Python environment
+            # running in a normal Python environment
             if platform.system() == 'Windows':
-                ffmpeg_dir = os.path.dirname(
-                                        os.path.realpath(__file__))
+                ffmpeg_dir = os.path.dirname(os.path.realpath(__file__))
             elif platform.system() == 'Darwin':
                 ffmpeg_dir = '/usr/local/bin'
             elif platform.system() == 'Linux':
@@ -343,7 +351,7 @@ class HEWorker(QObject):
                 p.terminate()
                 break
 
-        results = 'Process ended, return code {}\n\n'.format(p.returncode)
+        results = f'Process ended, return code {p.returncode}\n\n'
         self.sig_output.emit(file_id, results)
 
         return p.returncode
