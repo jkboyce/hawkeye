@@ -377,6 +377,7 @@ class HEMainWindow(QMainWindow):
         '?' icon in the lower right.
         """
         msg = ('<p><h2>Hawkeye Juggling Video Analyzer</h2></p>'
+               '<p>Version 1.0</p>'
                '<p>&copy; 2018 Jack Boyce (jboyce@gmail.com)</p>'
                '<p>&nbsp;</p>'
                '<p>This software processes video files given to it and tracks '
