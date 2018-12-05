@@ -210,6 +210,13 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.backButton)
         controls_layout.addWidget(self.forwardButton)
 
+        if getattr(sys, 'frozen', False):
+            # we are running in a bundle
+            base_dir = sys._MEIPASS
+        else:
+            # we are running in a normal Python environment
+            base_dir = os.path.dirname(os.path.realpath(__file__))
+
         errorbar_layout = QHBoxLayout()
         errorbar_layout.setContentsMargins(0, 0, 7, 0)
         self.playerErrorLabel = QLabel()
@@ -217,12 +224,14 @@ class HEMainWindow(QMainWindow):
         self.playerErrorLabel.setSizePolicy(QSizePolicy.Preferred,
                                             QSizePolicy.Maximum)
         aboutButton = QToolButton()
-        aboutButton.setIcon(QIcon('about_icon.png'))
+        aboutButton.setIcon(QIcon(os.path.join(base_dir,
+                                               'about_icon.png')))
         aboutButton.setIconSize(QSize(20, 20))
         aboutButton.setStyleSheet('border: none;')
         aboutButton.clicked.connect(self.showAbout)
         prefsButton = QToolButton()
-        prefsButton.setIcon(QIcon('preferences_icon.png'))
+        prefsButton.setIcon(QIcon(os.path.join(base_dir,
+                                               'preferences_icon.png')))
         prefsButton.setIconSize(QSize(20, 20))
         prefsButton.setStyleSheet('border: none;')
         prefsButton.clicked.connect(self.showPrefs)
@@ -379,7 +388,7 @@ class HEMainWindow(QMainWindow):
         msg = ('<p><h2>Hawkeye Juggling Video Analyzer</h2></p>'
                '<p>&copy; 2018 Jack Boyce (jboyce@gmail.com)</p>'
                '<p>&nbsp;</p>'
-               '<p>This software processes video files given to it and tracks '
+               '<p>This software processes video files and tracks '
                'objects moving through the air in parabolic trajectories. '
                'Currently it detects balls only. For best results use video '
                'with four or more objects, a high frame rate (60+ fps), '
