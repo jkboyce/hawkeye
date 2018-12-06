@@ -1392,34 +1392,28 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Juggling analyzer starting...')
 
+        self.compile_arc_data()
         self.compile_run_data()
         self.find_throw_errors()
 
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
-    def compile_run_data(self):
+    def compile_arc_data(self):
         """
-        Separate arcs into runs, and compile basic information about each
-        run (number of balls, duration, etc.). Stitch together arcs into
-        paths of specific balls. Determine throwing and catching hand for
-        each arc.
+        Work out some basic information about each arc in the video: Throw
+        height, throw position, etc.
         """
         notes = self.notes
         arcs = notes['arcs']
-        notes['run'] = list()
 
-        if len(arcs) == 0:
-            notes['runs'] = 0
-            return
-
-        # Calculate when each arc was thrown and caught. Assume that the
-        # bottom of the torso measurement box represents the throw and catch
-        # elevation.
         c = cos(notes['camera_tilt'])
         s = sin(notes['camera_tilt'])
 
         for arc in arcs:
+            # Calculate when each arc was thrown and caught. Assume that the
+            # bottom of the torso measurement box represents the throw and
+            # catch elevation.
             peak_framenum = round(arc.f_peak)
             if peak_framenum in notes['body']:
                 x, y, w, h = notes['body'][peak_framenum]
@@ -1482,10 +1476,22 @@ class HEVideoScanner:
             arc.hand_throw = None
             arc.prev = None
 
+    def compile_run_data(self):
         """
-        Separate out the arcs into runs. Assume that two arcs that overlap in
-        time are part of the same run.
+        Separate arcs into runs, and compile basic information about each
+        run (number of balls, duration, etc.). Stitch together arcs into
+        paths of specific balls. Determine throwing and catching hand for
+        each arc.
         """
+        notes = self.notes
+        arcs = notes['arcs']
+        notes['run'] = list()
+
+        if len(arcs) == 0:
+            notes['runs'] = 0
+            return
+
+        # Assume that two arcs that overlap in time are part of the same run.
         runs = list()
         sorted_arcs = sorted(
                 [(arc, arc.f_throw, arc.f_catch) for arc in arcs],
@@ -1497,6 +1503,7 @@ class HEVideoScanner:
                 current_run.append(arc)
                 current_max_frame = max(current_max_frame, f_catch)
             else:
+                # got a gap in time -> start a new run
                 runs.append(current_run)
                 current_run = [arc]
                 current_max_frame = f_catch
@@ -1511,7 +1518,6 @@ class HEVideoScanner:
             for tag in arc.tags:
                 notes['meas'][tag.frame].remove(tag)
         runs = good_runs
-        # runs = [run for run in runs if len(run) >= 2]
 
         notes['runs'] = len(runs)
 
@@ -1523,16 +1529,32 @@ class HEVideoScanner:
             run_dict = dict()
             run_dict['throws'] = len(run)
             run_dict['throw'] = run
+
             self.connect_arcs(run_dict)
             self.assign_hands(run_dict)
+
+            # run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
+
+            tps = run_dict['throws per sec']
+            if tps is not None:
+                run = run_dict['throw']
+                cmpp = notes['cm_per_pixel']
+                height = cmpp * statistics.mean(arc.height for arc in run)
+                g = 980.7
+                dwell_ratio = 0.63
+                N = 2 * dwell_ratio + tps * sqrt(8 * height / g)
+                print(f'tps = {tps:.3f}, ht = {height:.3f}, N = {N:.3f}')
+
             notes['run'].append(run_dict)
 
         if self._verbosity >= 2:
+            """
             for arc in arcs:
                 print('arc throw/catch at ({:8.6}, {:8.6})'
                       ' from {} hand'.format(
                         arc.f_throw, arc.f_catch, arc.hand_throw))
-            print('number of runs detected = {}'.format(notes['runs']))
+            """
+            print(f'Number of runs detected = {notes["runs"]}')
 
     def connect_arcs(self, run_dict):
         """
@@ -1605,8 +1627,6 @@ class HEVideoScanner:
             run_dict['throws per sec'] = None
             for arc in run:
                 arc.next = arc.prev = None
-
-        run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
 
     def assign_hands(self, run_dict):
         """

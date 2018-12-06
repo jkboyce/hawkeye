@@ -24,7 +24,8 @@ class HEWorker(QObject):
 
     This derives from QObject in order to emit signals and connect slots to
     other signals. The signal/slot mechanism is a thread-safe way to
-    communicate in Qt.
+    communicate in Qt. Look in HEMainWindow.startWorker() to see how this
+    thread is initiated and signals and slots connected.
     """
 
     # progress indicator signal for work-in-process
@@ -69,8 +70,8 @@ class HEWorker(QObject):
         self._queue = list()
 
         while not self._abort:
-            # important so this thread can receive signals:
             if self._app is not None:
+                # important so this thread can receive signals:
                 self._app.processEvents()
 
             if len(self._queue) == 0:
@@ -107,19 +108,6 @@ class HEWorker(QObject):
             if self._abort:
                 continue
 
-            import math
-            import statistics
-            for i in range(notes['runs']):
-                run_dict = notes['run'][i]
-                tps = run_dict['throws per sec']
-                if tps is not None:
-                    run = run_dict['throw']
-                    cmpp = notes['cm_per_pixel']
-                    height = cmpp * statistics.mean(arc.height for arc in run)
-                    g = 980.7
-                    N = 2 * 0.63 + tps * math.sqrt(8 * height / g)
-                    print(f'tps = {tps:.3f}, ht = {height:.3f}, N = {N:.3f}')
-
             resolution = self.make_display_video(fileinfo, notes)
             if self._abort:
                 continue
@@ -131,7 +119,7 @@ class HEWorker(QObject):
 
     def make_product_fileinfo(self, file_id):
         """
-        Make dictionary of file paths for all work products, the exception
+        Make a dictionary of file paths for all work products, the exception
         being the path to the display video which is added in
         make_display_video() below.
         """
@@ -210,13 +198,13 @@ class HEWorker(QObject):
         def processing_callback(step=0, maxsteps=0):
             # so UI thread can update progress bar:
             self.sig_progress.emit(file_id, step, maxsteps)
-            # important so we process abort signals to this thread during
-            # processing:
             if self._app is not None:
+                # important so we process abort signals to this thread during
+                # processing:
                 self._app.processEvents()
             if self._abort:
-                # raise exception to bail us out of whereever we
-                # are in processing
+                # raise exception to bail us out of whereever we are in
+                # processing:
                 raise HEAbortException()
 
         notes = None
@@ -236,7 +224,7 @@ class HEWorker(QObject):
     def make_display_video(self, fileinfo, notes):
         """
         The video we display in the UI is not the original video, but a version
-        transcoded with FFMPEG. We transcode for three reasons:
+        transcoded with FFmpeg. We transcode for three reasons:
 
         1. The video player can't smoothly step backward a frame at a time
            unless every frame is coded as a keyframe. This is rarely the case
@@ -270,7 +258,7 @@ class HEWorker(QObject):
         self.sig_output.emit(file_id, 'Video conversion starting...\n')
 
         if displayvid_resolution == 0:
-            # native resolution
+            # FFmpeg args for native resolution
             args = ['-f', 'lavfi',
                     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
                     '-i', file_path, '-shortest', '-c:v', 'libx264',
@@ -308,17 +296,17 @@ class HEWorker(QObject):
 
     def run_ffmpeg(self, args, file_id):
         """
-        Run FFMPEG to do video conversion in the background.
+        Run FFmpeg to do video conversion in the background.
 
         Args:
             args(list):
-                Argument list for FFMPEG, minus the executable name
+                Argument list for FFmpeg, minus the executable name
             file_id(str):
-                Filename for directing FFMPEG console output back to UI thread
+                Filename for directing FFmpeg console output back to UI thread
                 using sig_output signal
         Returns:
             retcode(int):
-                FFMPEG return code
+                FFmpeg return code
         """
         if getattr(sys, 'frozen', False):
             # running in a bundle
