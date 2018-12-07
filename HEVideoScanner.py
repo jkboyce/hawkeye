@@ -9,7 +9,7 @@ import os
 import pickle
 import copy
 from math import sqrt, exp, isnan, atan, degrees, sin, cos, floor
-import statistics
+from statistics import median, mean
 
 import cv2
 
@@ -56,9 +56,11 @@ class HEVideoScanner:
     notes['meas'][framenum]:
         list of Balltag objects in frame 'framenum' (list)
     notes['body'][framenum]:
-        tuple describing torso bounding box (body_x, body_y, body_w, body_h)
+        tuple describing torso bounding box
+        (body_x, body_y, body_w, body_h, was_detected)
         observed in frame 'framenum', where all values are in pixel units
-        (tuple)
+        and was_detected is a boolean indicating whether the bounding box
+        was a direct detection (True) or inferred (False) (tuple)
     notes['arcs']:
         list of Ballarc objects detected in video (list)
     notes['g_px_per_frame_sq']:
@@ -370,7 +372,8 @@ class HEVideoScanner:
                 body_w = body_average[2] * scan_scaledown
                 body_h = body_average[3] * scan_scaledown
 
-                notes['body'][framenum] = (body_x, body_y, body_w, body_h)
+                notes['body'][framenum] = (body_x, body_y, body_w, body_h,
+                                           True)
                 if display:
                     x = int(round(body_average[0]))
                     y = int(round(body_average[1]))
@@ -869,8 +872,7 @@ class HEVideoScanner:
 
         most_tagged_arcs = sorted(arcs, key=lambda a: len(a.tags),
                                   reverse=True)
-        g_px_per_frame_sq = 2 * statistics.median([a.e for a in
-                                                   most_tagged_arcs[:10]])
+        g_px_per_frame_sq = 2 * median([a.e for a in most_tagged_arcs[:10]])
         notes['g_px_per_frame_sq'] = g_px_per_frame_sq
 
         if 'fps' in notes:
@@ -1389,15 +1391,85 @@ class HEVideoScanner:
     # --- Step 4: Analyze juggling patterns -----------------------------------
 
     def analyze_juggling(self):
+        """
+        Build out a higher-level description of the juggling using the
+        individual throw arcs we found in steps 1-3.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        notes = self.notes
         if self._verbosity >= 1:
             print('Juggling analyzer starting...')
 
+        self.add_missing_torso_measurements()
         self.compile_arc_data()
-        self.compile_run_data()
-        self.find_throw_errors()
+
+        runs = self.find_runs()
+        if self._verbosity >= 2:
+            print(f'Number of runs detected = {notes["runs"]}')
+
+        """
+        Anlayze each run in turn. All run-related information is stored in
+        a dictionary called run_dict.
+        """
+        notes['run'] = list()
+        for run_id, run in enumerate(runs, start=1):
+            # assign sequence numbers
+            for throw_id, arc in enumerate(sorted(
+                            run, key=lambda x: x.f_throw), start=1):
+                arc.run_id = run_id
+                arc.throw_id = throw_id
+
+            run_dict = dict()
+            run_dict['throws'] = len(run)
+            run_dict['throw'] = run
+
+            self.connect_arcs(run_dict)
+            self.assign_hands(run_dict)
+            self.estimate_ball_count(run_dict)
+            self.analyze_throw_errors(run_dict)
+
+            notes['run'].append(run_dict)
 
         if self._verbosity >= 1:
             print('Juggling analyzer done')
+
+    def add_missing_torso_measurements(self):
+        """
+        Because the Haar cascade detector is not perfect, the juggler torso
+        is often not detected on every frame. Fill in missing measurements
+        with an estimate.
+        """
+        notes = self.notes
+
+        for framenum in range(0, notes['frame_count']):
+            if framenum not in notes['body']:
+                """
+                Torso was not detected for this frame. Estimate the torso box
+                based on tagged ball positions. Find the most extremal tags
+                nearby in time.
+                """
+                f_min = max(framenum - 120, 0)
+                f_max = min(framenum + 120, notes['frame_count'])
+
+                nearby_tags = []
+                for frame in range(f_min, f_max):
+                    nearby_tags.extend(notes['meas'][frame])
+
+                if len(nearby_tags) > 0:
+                    y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
+                    y_max = median([t.y for t in y_sorted_tags[-5:]])
+                    x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
+                    x_min = median([t.x for t in x_sorted_tags[:5]])
+                    x_max = median([t.x for t in x_sorted_tags[-5:]])
+
+                    w = 0.7 * (x_max - x_min)
+                    h = 0.8 * w
+                    x, y = 0.5 * (x_min + x_max - w), y_max - h
+                    notes['body'][framenum] = (x, y, w, h, False)
 
     def compile_arc_data(self):
         """
@@ -1415,31 +1487,7 @@ class HEVideoScanner:
             # bottom of the torso measurement box represents the throw and
             # catch elevation.
             peak_framenum = round(arc.f_peak)
-            if peak_framenum in notes['body']:
-                x, y, w, h = notes['body'][peak_framenum]
-            else:
-                """
-                Estimate torso box based on balltags. Find the most extremal
-                tags nearby in time.
-                """
-                f_min = max(peak_framenum - 200, 0)
-                f_max = min(peak_framenum + 200, notes['frame_count'])
-                nearby_tags = []
-                for frame in range(f_min, f_max):
-                    nearby_tags.extend(notes['meas'][frame])
-                y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
-                y_max = statistics.median([t.y for t in y_sorted_tags[-5:]])
-                x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
-                x_min = statistics.median([t.x for t in x_sorted_tags[:5]])
-                x_max = statistics.median([t.x for t in x_sorted_tags[-5:]])
-
-                w = 0.7 * (x_max - x_min)
-                h = 0.8 * w
-                x, y = 0.5 * (x_min + x_max - w), y_max - h
-                """
-                print('estimated torso = ({}, {}, {}, {})'.format(
-                        x, y, w, h))
-                """
+            x, y, w, h, _ = notes['body'][peak_framenum]
 
             # (xs_b, ys_b) are the screen coordinates of the bottom center
             # of the torso box
@@ -1466,32 +1514,24 @@ class HEVideoScanner:
             arc.x_origin = x_b
             arc.y_origin = y_b
 
-            # make high-probability assignments of catching hands
-            if arc.x_catch > 0.5 * w:
-                arc.hand_catch = 'left'
-            elif arc.x_catch < -0.5 * w:
-                arc.hand_catch = 'right'
-            else:
-                arc.hand_catch = None
-            arc.hand_throw = None
-            arc.prev = None
-
-    def compile_run_data(self):
+    def find_runs(self):
         """
-        Separate arcs into runs, and compile basic information about each
-        run (number of balls, duration, etc.). Stitch together arcs into
-        paths of specific balls. Determine throwing and catching hand for
-        each arc.
+        Separate arcs into a set of runs, by assuming that two arcs that
+        overlap in time are part of the same run.
+
+        Args:
+            None
+        Returns:
+            runs(list):
+                List of runs, each of which is a list of Ballarc objects
         """
         notes = self.notes
         arcs = notes['arcs']
-        notes['run'] = list()
 
         if len(arcs) == 0:
             notes['runs'] = 0
-            return
+            return []
 
-        # Assume that two arcs that overlap in time are part of the same run.
         runs = list()
         sorted_arcs = sorted(
                 [(arc, arc.f_throw, arc.f_catch) for arc in arcs],
@@ -1520,49 +1560,16 @@ class HEVideoScanner:
         runs = good_runs
 
         notes['runs'] = len(runs)
-
-        # analyze each run in turn
-        for run_id, run in enumerate(runs, start=1):
-            for arc in run:
-                arc.run_id = run_id
-
-            run_dict = dict()
-            run_dict['throws'] = len(run)
-            run_dict['throw'] = run
-
-            self.connect_arcs(run_dict)
-            self.assign_hands(run_dict)
-
-            # run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
-
-            tps = run_dict['throws per sec']
-            if tps is not None:
-                run = run_dict['throw']
-                cmpp = notes['cm_per_pixel']
-                height = cmpp * statistics.mean(arc.height for arc in run)
-                g = 980.7
-                dwell_ratio = 0.63
-                N = 2 * dwell_ratio + tps * sqrt(8 * height / g)
-                print(f'tps = {tps:.3f}, ht = {height:.3f}, N = {N:.3f}')
-
-            notes['run'].append(run_dict)
-
-        if self._verbosity >= 2:
-            """
-            for arc in arcs:
-                print('arc throw/catch at ({:8.6}, {:8.6})'
-                      ' from {} hand'.format(
-                        arc.f_throw, arc.f_catch, arc.hand_throw))
-            """
-            print(f'Number of runs detected = {notes["runs"]}')
+        return runs
 
     def connect_arcs(self, run_dict):
         """
         Try to connect arcs together that represent subsequent throws for
         a given ball. Do this by filling in arc.prev and arc.next for each
         arc in a given run, forming a linked list for each ball in the pattern.
-        When arcs are not detected (e.g., very low throws or handoffs), this
-        process will make mistakes.
+
+        Since some arcs are not detected (e.g. very low throws), it's
+        questionable how useful this since it will make mistakes.
 
         Args:
             run_dict(dict):
@@ -1619,9 +1626,6 @@ class HEVideoScanner:
                     else:
                         arc.next = likely_nexts[1][0]
                         likely_nexts[1][0].prev = arc
-
-                if arc.prev is not None:
-                    arc.hand_throw = arc.prev.hand_catch
         else:
             # likely just a single throw in the run
             run_dict['throws per sec'] = None
@@ -1630,9 +1634,8 @@ class HEVideoScanner:
 
     def assign_hands(self, run_dict):
         """
-        Finish assigning hands to throws for a given run. Do this by filling in
-        arc.hand_throw and arc.hand_catch for each arc. Note some of the hand
-        assignments were already done in previous steps.
+        Assign hands to throws for a given run. Do this by filling in
+        arc.hand_throw and arc.hand_catch for each arc.
 
         Args:
             run_dict(dict):
@@ -1642,9 +1645,29 @@ class HEVideoScanner:
         """
         notes = self.notes
         run = run_dict['throw']
+
+        # Start by making high-probability assignments of catching hands
+        for arc in run:
+            peak_framenum = round(arc.f_peak)
+            x, y, w, h, _ = notes['body'][peak_framenum]
+
+            if arc.x_catch > 0.5 * w:
+                arc.hand_catch = 'left'
+            elif arc.x_catch < -0.5 * w:
+                arc.hand_catch = 'right'
+            else:
+                arc.hand_catch = None
+
+        for arc in run:
+            if arc.prev is not None:
+                arc.hand_throw = arc.prev.hand_catch
+            else:
+                arc.hand_throw = None
+
         mp_window_frames = 0.05 * notes['fps']
         mp_window_pixels = 10.0 / notes['cm_per_pixel']
         min_cycle_frames = 0.23 * notes['fps']
+
         arc_queue = [arc for arc in run if arc.hand_throw is not None]
 
         if len(arc_queue) == 0:
@@ -1734,12 +1757,26 @@ class HEVideoScanner:
             if arc.prev is not None:
                 arc.prev.hand_catch = arc.hand_throw
 
-        # assign sequence numbers to throws
-        for throw_id, arc in enumerate(sorted(
-                        run, key=lambda x: x.f_throw), start=1):
-            arc.throw_id = throw_id
+    def estimate_ball_count(self, run_dict):
+        notes = self.notes
 
-    def find_throw_errors(self):
+        # run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
+
+        tps = run_dict['throws per sec']
+        if tps is None:
+            N = 1
+        else:
+            run = run_dict['throw']
+            cmpp = notes['cm_per_pixel']
+            height = cmpp * mean(arc.height for arc in run)
+            g = 980.7
+            dwell_ratio = 0.63
+            N = 2 * dwell_ratio + tps * sqrt(8 * height / g)
+            print(f'tps = {tps:.3f}, ht = {height:.3f}, N = {N:.3f}')
+
+        run_dict['balls'] = int(round(N))
+
+    def analyze_throw_errors(self, run_dict):
         """
         For each arc, calculate and store as attributes the following:
         (1) location error in throw and peak (x,y) positions
@@ -1748,44 +1785,47 @@ class HEVideoScanner:
         (3) list of close arcs the object comes nearest to
         """
         notes = self.notes
-        for arc in notes['arcs']:
+
+        run = run_dict['throw']
+        for arc in run:
             arc.error = None
             arc.ideal = None
             arc.close_arcs = None
+        if len(run) < 3:
+            return
 
-        for i in range(notes['runs']):
-            run_dict = notes['run'][i]
-            run = run_dict['throw']     # list of Ballarc objects
-            balls = run_dict['balls']
-            PoverW_ideal = 0.32
+        balls = run_dict['balls']
+        PoverW_ideal = 0.32
 
-            if len(run) < 3:
+        sorted_run = sorted(run, key=lambda a: a.throw_id)
+
+        for throw_idx in range(2, len(run)):
+            arc = sorted_run[throw_idx]
+
+            # set of other arcs likeliest to collide with this one:
+            if balls % 2 == 0:
+                window = [-2, 2]
+            else:
+                window = [-2, -1, 1, 2]
+            window = [x for x in window if 0 <= (throw_idx + x) < len(run)]
+            if len(window) < 2:
                 continue
-            sorted_run = sorted(run, key=lambda a: a.throw_id)
 
-            for throw_idx in range(2, len(run)):
-                arc = sorted_run[throw_idx]
+            N = X = X2 = F = XF = C = 0
+            for x in window:
+                arc2 = sorted_run[throw_idx + x]
+                N += 1
+                X += x
+                X2 += x * x
+                F += arc2.f_throw
+                XF += x * arc2.f_throw
+                C += arc2.c     # y-coordinate (pixels) at peak
 
-                # set of other arcs likeliest to collide with this one:
-                if balls % 2 == 0:
-                    window = [-2, 2]
-                else:
-                    window = [-2, -1, 1, 2]
-                window = [x for x in window if 0 <= (throw_idx + x) < len(run)]
+            print('len(window) = {}'.format(len(window)))
 
-                N = X = X2 = F = XF = C = 0
-                for x in window:
-                    arc2 = sorted_run[throw_idx + x]
-                    N += 1
-                    X += x
-                    X2 += x * x
-                    F += arc2.f_throw
-                    XF += x * arc2.f_throw
-                    C += arc2.c     # y-coordinate (pixels) at peak
-
-                f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
-                c_ideal = C / N
-                e_ideal = arc.e
+            f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
+            c_ideal = C / N
+            e_ideal = arc.e
 
 
 
@@ -1797,12 +1837,12 @@ class HEVideoScanner:
                 continue
 
             # find the target width and height of the pattern
-            catch_left_avg = statistics.mean(t.x_catch for t in run
+            catch_left_avg = mean(t.x_catch for t in run
                                              if t.hand_catch == 'left')
-            catch_right_avg = statistics.mean(t.x_catch for t in run
+            catch_right_avg = mean(t.x_catch for t in run
                                               if t.hand_catch == 'right')
             width = catch_left_avg - catch_right_avg
-            height = statistics.mean(t.height for t in run)
+            height = mean(t.height for t in run)
 
             if balls == 9:
                 ideal_x_throw = (0.5 * width) * 0.55
@@ -2029,7 +2069,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
         if framenum >= startframe:
             if framenum in body:
-                x, y, w, h = notes['body'][framenum]
+                x, y, w, h, _ = notes['body'][framenum]
                 x = int(round(x))
                 y = int(round(y))
                 w = int(round(w))

@@ -817,7 +817,7 @@ class HEMainWindow(QMainWindow):
                 height = 0.125 * 980.7 * (catch_t - throw_t)**2
 
                 try:
-                    x, _, w, _ = notes['body'][round(arc.f_peak)]
+                    x, _, w, _, _ = notes['body'][round(arc.f_peak)]
                     torso_x = (x + 0.5 * w) * notes['cm_per_pixel']
                     torso_x_str = f'{torso_x:.1f}'
                     throw_x -= torso_x
@@ -1457,7 +1457,7 @@ class HEVideoView(QGraphicsView):
 
         # draw box around juggler torso
         if prefs['torso'] and notes_framenum in notes['body']:
-            x, y, w, h = notes['body'][notes_framenum]
+            x, y, w, h, _ = notes['body'][notes_framenum]
             dUL_x, dUL_y = mapToDisplayVideo(x, y)
             dLR_x, dLR_y = mapToDisplayVideo(x + w, y + h)
             # upper-left and lower-right points respectively:
