@@ -90,6 +90,7 @@ class HEVideoScanner:
     run_dict['duration']:
         duration in seconds of run (float)
     """
+
     def __init__(self, filename, scanvideo=None, params=None):
         """
         Initialize the video scanner. This doesn't do any actual processing;
@@ -217,7 +218,7 @@ class HEVideoScanner:
         This function is the only one in the scanner that uses OpenCV.
 
         Args:
-            display(bool):
+            display(bool, optional):
                 if True then show video in a window while processing
         Returns:
             None
@@ -226,7 +227,8 @@ class HEVideoScanner:
         scanvideo = self.notes['scanvideo']
 
         if self._verbosity >= 1:
-            print('Object detection starting...')
+            print('Object detection starting on video {}...'.format(
+                notes['source']))
         cap = cv2.VideoCapture(notes['source'])
         if not cap.isOpened():
             print('Error opening video file')
@@ -254,6 +256,10 @@ class HEVideoScanner:
                 exit()      # ...and here JKB
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if self._verbosity >= 2:
+                print(f'Switching to transcoded video {scanvideo}')
+                print('width = {}, height = {}'.format(
+                    scan_framewidth, scan_frameheight))
 
         scan_scaledown = frameheight / scan_frameheight
 
@@ -320,6 +326,7 @@ class HEVideoScanner:
                 fps *
                 notes['scanner_params']['body_averaging_time_window_secs']))
         body_frames_averaged = 0
+        frames_with_no_body = 0
 
         def center_distance(a, b):
             ax, ay, aw, ah = a
@@ -353,6 +360,7 @@ class HEVideoScanner:
                 bodies = bodies[:1]
 
             for x, y, w, h in bodies:
+                frames_with_no_body = 0
                 if body_average is None:
                     body_average = (x, y, w, h)
                     body_frames_averaged = 1
@@ -365,8 +373,12 @@ class HEVideoScanner:
                                     body_average[1] * temp1 + y * temp2,
                                     body_average[2] * temp1 + w * temp2,
                                     body_average[3] * temp1 + h * temp2)
+                break
+            else:
+                frames_with_no_body += 1
 
-            if body_average is not None:
+            if (body_average is not None and
+                    frames_with_no_body < body_frames_to_average):
                 body_x, body_y = scan_to_video_coord(body_average[0],
                                                      body_average[1])
                 body_w = body_average[2] * scan_scaledown
@@ -428,7 +440,7 @@ class HEVideoScanner:
             cv2.destroyAllWindows()
 
         if self._verbosity >= 1:
-            print('Object detection done: {} detections'.format(tag_count))
+            print(f'Object detection done: {tag_count} detections')
 
     # --- Step 2: Build initial set of arcs -----------------------------------
 
@@ -680,7 +692,8 @@ class HEVideoScanner:
 
     def fit_arcs(self, arcs):
         """
-        Do a weighted least-squares fit of each arc to the measured points.
+        Do a weighted least-squares fit of each arc (assumed to be a parabolic
+        trajectory) to the measured points.
 
         Args:
             arcs(list of Ballarc):
@@ -891,6 +904,13 @@ class HEVideoScanner:
         affiliation with each arc (E step), and using weighted least-squares
         fitting to refine the parabolas (M step). Try to merge and prune out
         bad arcs as we go.
+
+        References for EM algorithm:
+        - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal
+          Processing Magazine, vol. 13, no. 6, pp. 47–60, November 1996.
+        - Ribnick, E. et al, "Detection of Thrown Objects in Indoor and
+          Outdoor Scenes", Proceedings of the 2007 IEEE/RSJ International
+          Conference on Intelligent Robots and Systems, IROS 2007.
 
         Args:
             None
@@ -1412,7 +1432,7 @@ class HEVideoScanner:
             print(f'Number of runs detected = {notes["runs"]}')
 
         """
-        Anlayze each run in turn. All run-related information is stored in
+        Analyze each run in turn. All run-related information is stored in
         a dictionary called run_dict.
         """
         notes['run'] = list()
@@ -1427,6 +1447,10 @@ class HEVideoScanner:
             run_dict['throws'] = len(run)
             run_dict['throw'] = run
 
+            if self._verbosity >= 2:
+                print(f'--- Analyzing run {run_id} ------------------------')
+                print(f'Number of arcs detected = {run_dict["throws"]}')
+
             self.connect_arcs(run_dict)
             self.assign_hands(run_dict)
             self.estimate_ball_count(run_dict)
@@ -1434,6 +1458,8 @@ class HEVideoScanner:
 
             notes['run'].append(run_dict)
 
+        if self._verbosity >= 2:
+            print(f'--------------------------------------------')
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
@@ -1444,9 +1470,12 @@ class HEVideoScanner:
         with an estimate.
         """
         notes = self.notes
+        last_torso = None
 
         for framenum in range(0, notes['frame_count']):
-            if framenum not in notes['body']:
+            if framenum in notes['body']:
+                last_torso = notes['body'][framenum]
+            else:
                 """
                 Torso was not detected for this frame. Estimate the torso box
                 based on tagged ball positions. Find the most extremal tags
@@ -1460,6 +1489,7 @@ class HEVideoScanner:
                     nearby_tags.extend(notes['meas'][frame])
 
                 if len(nearby_tags) > 0:
+                    """
                     y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
                     y_max = median([t.y for t in y_sorted_tags[-5:]])
                     x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
@@ -1469,7 +1499,15 @@ class HEVideoScanner:
                     w = 0.7 * (x_max - x_min)
                     h = 0.8 * w
                     x, y = 0.5 * (x_min + x_max - w), y_max - h
+                    """
+                    x, y, w, h, _ = last_torso
+                    x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
+                    x_min = median([t.x for t in x_sorted_tags[:5]])
+                    x_max = median([t.x for t in x_sorted_tags[-5:]])
+                    x = 0.5 * (x_min + x_max - w)
+
                     notes['body'][framenum] = (x, y, w, h, False)
+                    # print(f'added torso to frame {framenum}')
 
     def compile_arc_data(self):
         """
@@ -1486,8 +1524,7 @@ class HEVideoScanner:
             # Calculate when each arc was thrown and caught. Assume that the
             # bottom of the torso measurement box represents the throw and
             # catch elevation.
-            peak_framenum = round(arc.f_peak)
-            x, y, w, h, _ = notes['body'][peak_framenum]
+            x, y, w, h, _ = notes['body'][round(arc.f_peak)]
 
             # (xs_b, ys_b) are the screen coordinates of the bottom center
             # of the torso box
@@ -1533,20 +1570,20 @@ class HEVideoScanner:
             return []
 
         runs = list()
-        sorted_arcs = sorted(
-                [(arc, arc.f_throw, arc.f_catch) for arc in arcs],
-                key=lambda i: i[1])             # sort by throw frame
-        current_run = [sorted_arcs[0][0]]       # first arc
-        current_max_frame = sorted_arcs[0][2]   # first arc's catch frame
-        for arc, f_throw, f_catch in sorted_arcs[1:]:
-            if f_throw < current_max_frame:
+        sorted_arcs = sorted(arcs, key=lambda a: a.f_throw)
+        first_arc = sorted_arcs[0]
+        current_run = [first_arc]
+        current_max_frame = first_arc.f_catch
+
+        for arc in sorted_arcs[1:]:
+            if arc.f_throw < current_max_frame:
                 current_run.append(arc)
-                current_max_frame = max(current_max_frame, f_catch)
+                current_max_frame = max(current_max_frame, arc.f_catch)
             else:
                 # got a gap in time -> start a new run
                 runs.append(current_run)
                 current_run = [arc]
-                current_max_frame = f_catch
+                current_max_frame = arc.f_catch
         runs.append(current_run)
 
         # filter out any runs that are too short
@@ -1568,8 +1605,8 @@ class HEVideoScanner:
         a given ball. Do this by filling in arc.prev and arc.next for each
         arc in a given run, forming a linked list for each ball in the pattern.
 
-        Since some arcs are not detected (e.g. very low throws), it's
-        questionable how useful this since it will make mistakes.
+        Since some arcs are not detected (e.g. very low throws), this process
+        can often make mistakes.
 
         Args:
             run_dict(dict):
@@ -1635,7 +1672,8 @@ class HEVideoScanner:
     def assign_hands(self, run_dict):
         """
         Assign hands to throws for a given run. Do this by filling in
-        arc.hand_throw and arc.hand_catch for each arc.
+        arc.hand_throw (guaranteed) and arc.hand_catch (where possible) for
+        each arc in the run. Assigns None to hand_catch where it is unknown.
 
         Args:
             run_dict(dict):
@@ -1645,11 +1683,18 @@ class HEVideoScanner:
         """
         notes = self.notes
         run = run_dict['throw']
+        vocal = (self._verbosity >= 2)
 
-        # Start by making high-probability assignments of catching hands
+        if vocal:
+            print('Assigning hands to arcs...')
+
+        # Start by making high-probability assignments of catching hands.
+        # We start with catches because they are typically farther from the
+        # centerline of the body and therefore more definitively on one side
+        # or the other.
         for arc in run:
-            peak_framenum = round(arc.f_peak)
-            x, y, w, h, _ = notes['body'][peak_framenum]
+            # _, _, w, _, _ = notes['body'][round(arc.f_peak)]
+            w = 70.0 / notes['cm_per_pixel']
 
             if arc.x_catch > 0.5 * w:
                 arc.hand_catch = 'left'
@@ -1657,26 +1702,43 @@ class HEVideoScanner:
                 arc.hand_catch = 'right'
             else:
                 arc.hand_catch = None
+            if vocal and arc.hand_catch is not None:
+                print(f'wide catch; set arc {arc.throw_id} '
+                      f'to catch in {arc.hand_catch}')
 
+        # Propagate those assignments to any subsequent throws of same balls:
         for arc in run:
-            if arc.prev is not None:
-                arc.hand_throw = arc.prev.hand_catch
-            else:
-                arc.hand_throw = None
+            arc.hand_throw = None if arc.prev is None else arc.prev.hand_catch
+            if vocal and arc.hand_throw is not None:
+                print(f'propagating; set arc {arc.throw_id} '
+                      f'to throw from {arc.hand_throw}')
 
-        mp_window_frames = 0.05 * notes['fps']
-        mp_window_pixels = 10.0 / notes['cm_per_pixel']
-        min_cycle_frames = 0.23 * notes['fps']
-
+        """
+        Now the main algorithm. Our strategy is to maintain a queue of arcs
+        that have had hand_throw assigned. We will try to use these arcs to
+        assign hand_throw for nearby arcs that are unassigned, at which point
+        they are added to the queue. Continue this process recursively for as
+        long as we can.
+        """
         arc_queue = [arc for arc in run if arc.hand_throw is not None]
 
         if len(arc_queue) == 0:
-            widest_throws = [(arc, abs(arc.x_throw)) for arc in run]
-            widest_throws = sorted(widest_throws, key=lambda x: x[1],
-                                   reverse=True)
-            arc = widest_throws[0][0]
+            # Nothing assigned yet; assign something to get started
+            arc = max(run, key=lambda a: abs(a.x_throw))
             arc.hand_throw = 'right' if arc.x_throw < 0 else 'left'
             arc_queue = [arc]
+            if vocal:
+                print(f'no throws assigned; set arc {arc.throw_id} '
+                      f'to throw from {arc.hand_throw}')
+
+        # arcs that originate within 0.05s and 10cm of one another are
+        # assumed to be a multiplex throw from the same hand:
+        mp_window_frames = 0.05 * notes['fps']
+        mp_window_pixels = 10.0 / notes['cm_per_pixel']
+
+        # assume that a hand can't make two distinct throws within 0.23s
+        # (or less) of each other:
+        min_cycle_frames = 0.23 * notes['fps']
 
         while True:
             while len(arc_queue) > 0:
@@ -1686,9 +1748,9 @@ class HEVideoScanner:
                 Two cases for other arcs that can have throw hand assigned
                 based on assigned_arc:
                 1. arcs that are very close in time and space, which must
-                   be the same hand (multiplex throw)
+                   be from the same hand (a multiplex throw)
                 2. arcs thrown within min_cycle_frames of its throw time,
-                   which must be the opposite hand
+                   which should be from the opposite hand
                 """
                 mp_arcs = [arc for arc in run if arc.hand_throw is None
                            and (assigned_arc.f_throw - mp_window_frames) <
@@ -1700,6 +1762,9 @@ class HEVideoScanner:
                 for arc in mp_arcs:
                     arc.hand_throw = assigned_arc.hand_throw
                     arc_queue.append(arc)
+                    if vocal:
+                        print(f'multiplex throw; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
 
                 close_arcs = [arc for arc in run if arc.hand_throw is None
                               and (assigned_arc.f_throw - min_cycle_frames)
@@ -1709,28 +1774,23 @@ class HEVideoScanner:
                     arc.hand_throw = 'right' if (assigned_arc.hand_throw
                                                  == 'left') else 'left'
                     arc_queue.append(arc)
+                    if vocal:
+                        print(f'close timing; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
 
-            # If there are still unassigned throws, assign one by assuming
-            # alternating hands. Find the unassigned throw that is closest
-            # in time to one that is already assigned.
-            unassigned_arcs = [arc for arc in run if arc.hand_throw is
-                               None]
+            # If there are still unassigned throws, find the one that is
+            # closest in time to one that is already assigned.
+            unassigned_arcs = [arc for arc in run if arc.hand_throw is None]
             if len(unassigned_arcs) == 0:
                 break
 
-            arc_pairs = []
-            for arc in unassigned_arcs:
-                closest_assigned = [(arc2, arc.f_throw - arc2.f_throw)
-                                    for arc2 in run if arc2.hand_throw is
-                                    not None]
-                closest_assigned = sorted(closest_assigned,
-                                          key=lambda x: abs(x[1]))
-                arc_pairs.append((arc, closest_assigned[0][0],
-                                  closest_assigned[0][1]))
-            arc_pairs = sorted(arc_pairs, key=lambda x: abs(x[2]))
-
-            arc_toassign = arc_pairs[0][0]
-            arc_assigned = arc_pairs[0][1]
+            assigned_arcs = [arc for arc in run if arc.hand_throw is not None]
+            closest_assigned = [(arc, min(assigned_arcs, key=lambda a:
+                                          abs(arc.f_throw - a.f_throw)))
+                                for arc in unassigned_arcs]
+            arc_toassign, arc_assigned = min(closest_assigned,
+                                             key=lambda p: abs(p[0].f_throw -
+                                                               p[1].f_throw))
 
             # We want to assign a throw hand to arc_toassign. First
             # check if it's part of a synchronous throw pair, in which
@@ -1748,33 +1808,74 @@ class HEVideoScanner:
                     arc_toassign2.hand_throw = 'left'
                 arc_queue.append(arc_toassign)
                 arc_queue.append(arc_toassign2)
+                if vocal:
+                    print(f'sync pair; set arc {arc_toassign.throw_id} '
+                          f'to throw from {arc_toassign.hand_throw}')
+                    print(f'sync pair; set arc {arc_toassign2.throw_id} '
+                          f'to throw from {arc_toassign2.hand_throw}')
             else:
                 arc_toassign.hand_throw = 'right' if (
                         arc_assigned.hand_throw == 'left') else 'left'
                 arc_queue.append(arc_toassign)
+                if vocal:
+                    print(f'alternating (from arc {arc_assigned.throw_id}); '
+                          f'set arc {arc_toassign.throw_id} to throw from '
+                          f'{arc_toassign.hand_throw}')
 
+        # fill in as many catching hands as we can:
         for arc in run:
             if arc.prev is not None:
                 arc.prev.hand_catch = arc.hand_throw
+                if vocal and arc.hand_throw is not None:
+                    print(f'propagating; set arc {arc.prev.throw_id} '
+                          f'to catch in {arc.hand_throw}')
 
     def estimate_ball_count(self, run_dict):
+        """
+        Use some heuristics to estimate the number of balls in the pattern.
+        This can't be done by counting the number of object in the air since
+        there is usually at least one in the hands that won't be seen by
+        the tracker.
+        """
         notes = self.notes
-
-        # run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
-
+        run = run_dict['throw']
         tps = run_dict['throws per sec']
-        if tps is None:
-            N = 1
-        else:
-            run = run_dict['throw']
-            cmpp = notes['cm_per_pixel']
-            height = cmpp * mean(arc.height for arc in run)
-            g = 980.7
-            dwell_ratio = 0.63
-            N = 2 * dwell_ratio + tps * sqrt(8 * height / g)
-            print(f'tps = {tps:.3f}, ht = {height:.3f}, N = {N:.3f}')
+        height = notes['cm_per_pixel'] * mean(arc.height for arc in run)
 
-        run_dict['balls'] = int(round(N))
+        if tps is None:
+            # should never happen
+            N_round = N_est = 1
+        else:
+            # estimate using physics, from the height of the pattern
+            g = 980.7               # gravity in cm/s^2
+            dwell_ratio = 0.63      # assumed fraction of time hand is filled
+            N_est = 2 * dwell_ratio + tps * sqrt(8 * height / g)
+
+            same_side_throws = sum(1 for arc in run if
+                                   arc.hand_catch == arc.hand_throw)
+            total_throws = sum(1 for arc in run if arc.hand_catch is not None
+                               and arc.hand_throw is not None)
+
+            if total_throws > 0:
+                if same_side_throws > 0.5 * total_throws:
+                    # assume a fountain pattern with even number ->
+                    # round N to the nearest even number
+                    N_round = 2 * int(round(0.5 * N_est))
+                else:
+                    # assume a cascade pattern with odd number ->
+                    # round N to the nearest odd number
+                    N_round = 1 + 2 * int(round(0.5 * (N_est - 1)))
+            else:
+                N_round = int(round(N_est))
+
+        # maximum possible value based on connections between arcs:
+        N_max = sum(1 for arc in run if arc.prev is None)
+
+        run_dict['balls'] = N = min(N_round, N_max)
+        if self._verbosity >= 2:
+            print(f'tps = {tps:.2f} Hz, H = {height:.1f} cm, '
+                  f'N_est = {N_est:.2f}, N_round = {N_round}, '
+                  f'N_max = {N_max}, N = {N}')
 
     def analyze_throw_errors(self, run_dict):
         """
@@ -1821,7 +1922,7 @@ class HEVideoScanner:
                 XF += x * arc2.f_throw
                 C += arc2.c     # y-coordinate (pixels) at peak
 
-            print('len(window) = {}'.format(len(window)))
+            # print('len(window) = {}'.format(len(window)))
 
             f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
             c_ideal = C / N
@@ -2167,7 +2268,7 @@ if __name__ == '__main__':
     # _filename = 'movies/8ballsLonger.mov'
     # _filename = 'movies/vert_test.mp4'
     # _scanvideo = 'movies/__Hawkeye__/GOPR0531_640x480.mp4'
-    _scanvideo = None
+    _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
 
     watch_video = False
 

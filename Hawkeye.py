@@ -57,7 +57,7 @@ class HEMainWindow(QMainWindow):
 
         self.prefs = {
             'markers': True,
-            'torso': True,
+            'torso': False,
             'parabolas': True,
             'throw_labels': True,
             'ideal_throws': False,
@@ -753,7 +753,7 @@ class HEMainWindow(QMainWindow):
         self.stats_run.setCurrentText('1')
 
     @Slot(int)
-    def statsRunChanged(self, index):
+    def statsRunChanged(self, index: int):
         """
         Called when a new run is selected in the Stats view combo box.
         """
@@ -804,11 +804,21 @@ class HEMainWindow(QMainWindow):
                 throw_t -= start_t
                 throw_x, _ = arc.get_position(arc.f_throw, notes)
                 throw_x *= notes['cm_per_pixel']
-                throw_hand = 'R' if arc.hand_throw == 'right' else 'L'
+                if arc.hand_throw == 'right':
+                    throw_hand = 'R'
+                elif arc.hand_throw == 'left':
+                    throw_hand = 'L'
+                else:
+                    throw_hand = '?'
                 catch_t = arc.f_catch / notes['fps'] - start_t
                 catch_x, _ = arc.get_position(arc.f_catch, notes)
                 catch_x *= notes['cm_per_pixel']
-                catch_hand = 'R' if arc.hand_catch == 'right' else 'L'
+                if arc.hand_catch == 'right':
+                    catch_hand = 'R'
+                elif arc.hand_catch == 'left':
+                    catch_hand = 'L'
+                else:
+                    catch_hand = '?'
                 hands = throw_hand + '->' + catch_hand
 
                 throw_vx = arc.b
@@ -1184,7 +1194,7 @@ class HEMainWindow(QMainWindow):
                 self.currentVideoItem._duration = duration
 
     @Slot(int)
-    def on_rate_change(self, index):
+    def on_rate_change(self, index: int):
         """
         Called when the user selects a playback rate on the dropdown menu.
         """
