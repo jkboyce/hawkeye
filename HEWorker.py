@@ -2,7 +2,7 @@
 #
 # Hawkeye worker thread for analyzing and transcoding videos.
 #
-# Copyright 2018 Jack Boyce (jboyce@gmail.com)
+# Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
 import sys
@@ -160,7 +160,13 @@ class HEWorker(QObject):
         scanvid_path = fileinfo['scanvid_path']
 
         if os.path.isfile(notes_path):
-            return HEVideoScanner.read_notes(notes_path)
+            notes = HEVideoScanner.read_notes(notes_path)
+            if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
+                return notes
+            else:
+                # old version of notes file -> delete it and create a new one
+                os.remove(notes_path)
+                del notes
 
         """
         Create a video at 640x480 resolution to use as input for the feature
