@@ -2,7 +2,7 @@
 #
 # Hawkeye application window and main entry point.
 #
-# Copyright 2018 Jack Boyce (jboyce@gmail.com)
+# Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
 import sys
@@ -33,6 +33,7 @@ class HEMainWindow(QMainWindow):
     """
     The main application window.
     """
+    CURRENT_APP_VERSION = "1.0"
 
     # signal that informs the worker of a new video to process
     sig_new_work = Signal(str)
@@ -386,7 +387,8 @@ class HEMainWindow(QMainWindow):
         '?' icon in the lower right.
         """
         msg = ('<p><h2>Hawkeye Juggling Video Analyzer</h2></p>'
-               '<p>&copy; 2018 Jack Boyce (jboyce@gmail.com)</p>'
+               '<p>Version ' + HEMainWindow.CURRENT_APP_VERSION + '</p>'
+               '<p>Copyright &copy; 2019 Jack Boyce (jboyce@gmail.com)</p>'
                '<p>&nbsp;</p>'
                '<p>This software processes video files and tracks '
                'objects moving through the air in parabolic trajectories. '
@@ -665,12 +667,14 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
+            """
             headeritem = QListWidgetItem('')
             headeritem._type = 'stats'
             headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
             header = QLabel('Stats')
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
+            """
 
             headeritem = QListWidgetItem('')
             headeritem._type = 'data'
