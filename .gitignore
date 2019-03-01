@@ -2,3 +2,5 @@
 __pycache__/
 admin/
 movies/
+packaging/osx/build/
+packaging/osx/dist/
