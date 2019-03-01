@@ -2,13 +2,14 @@
 #
 # Python class to extract features from a juggling video.
 #
-# Copyright 2018 Jack Boyce (jboyce@gmail.com)
+# Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import sys
 import os
 import pickle
 import copy
-from math import sqrt, exp, isnan, atan, degrees, sin, cos, floor
+import random
+from math import sqrt, exp, isnan, atan, degrees, sin, cos, log
 from statistics import median, mean
 
 import cv2
@@ -35,6 +36,9 @@ class HEVideoScanner:
     as follows:
 
     notes['version']:
+        sequential number incremented whenever notes dictionary format
+        changes (int)
+    notes['step']:
         step number of last processing step completed (int)
     notes['source']:
         full path to source video (str)
@@ -50,7 +54,9 @@ class HEVideoScanner:
     notes['frame_height']:
         source video frame height in pixels (int)
     notes['camera_tilt']:
-        inferred camera tilt angle in source video, in radians (float)
+        inferred camera tilt angle in source video, in radians (float).
+        Positive camera tilt equates to a counterclockwise rotation of the
+        juggler in the video.
     notes['frame_count']:
         count of frames in source video (int)
     notes['meas'][framenum]:
@@ -58,9 +64,10 @@ class HEVideoScanner:
     notes['body'][framenum]:
         tuple describing torso bounding box
         (body_x, body_y, body_w, body_h, was_detected)
-        observed in frame 'framenum', where all values are in pixel units
-        and was_detected is a boolean indicating whether the bounding box
-        was a direct detection (True) or inferred (False) (tuple)
+        observed in frame 'framenum', where all values are in camera
+        coordinates and pixel units, and was_detected is a boolean indicating
+        whether the bounding box was a direct detection (True) or was inferred
+        (False) (tuple)
     notes['arcs']:
         list of Ballarc objects detected in video (list)
     notes['g_px_per_frame_sq']:
@@ -91,6 +98,8 @@ class HEVideoScanner:
         duration in seconds of run (float)
     """
 
+    CURRENT_NOTES_VERSION = 1
+
     def __init__(self, filename, scanvideo=None, params=None):
         """
         Initialize the video scanner. This doesn't do any actual processing;
@@ -114,12 +123,13 @@ class HEVideoScanner:
             None
         """
         self.notes = dict()
+        self.notes['version'] = HEVideoScanner.CURRENT_NOTES_VERSION
         self.notes['source'] = os.path.abspath(filename)
         self.notes['scanvideo'] = (os.path.abspath(scanvideo)
                                    if scanvideo is not None else None)
         self.notes['scanner_params'] = (HEVideoScanner.defaultScannerParams()
                                         if params is None else params)
-        self.notes['version'] = 0
+        self.notes['step'] = 0
 
     def process(self, steps=(1, 4), readnotes=False, writenotes=False,
                 notesdir=None, callback=None, verbosity=0):
@@ -193,7 +203,7 @@ class HEVideoScanner:
                 self.EM_optimize()
             elif step == 4:
                 self.analyze_juggling()
-            self.notes['version'] = step
+            self.notes['step'] = step
 
         if writenotes:
             if step_end in (1, 2, 3):
@@ -1032,6 +1042,14 @@ class HEVideoScanner:
         x- and y-components of gravity. Estimate acceleration in each direction
         with a least-squares fit.
 
+        Based on our sign conventions, a positive camera tilt angle
+        corresponds to an apparent counterclockwise rotation of the juggler in
+        the video. We transform from juggler coordinates to pixel (camera)
+        coordinates with:
+
+                x_pixels =  x_juggler * cos(t) + y_juggler * sin(t)
+                y_pixels = -x_juggler * sin(t) + y_juggler * cos(t)
+
         Args:
             arcs(list of Ballarc):
                 list of Ballarc objects in video
@@ -1426,15 +1444,13 @@ class HEVideoScanner:
 
         self.add_missing_torso_measurements()
         self.compile_arc_data()
-
         runs = self.find_runs()
+
         if self._verbosity >= 2:
             print(f'Number of runs detected = {notes["runs"]}')
 
-        """
-        Analyze each run in turn. All run-related information is stored in
-        a dictionary called run_dict.
-        """
+        # Analyze each run in turn. All run-related information is stored in
+        # a dictionary called run_dict.
         notes['run'] = list()
         for run_id, run in enumerate(runs, start=1):
             # assign sequence numbers
@@ -1454,12 +1470,12 @@ class HEVideoScanner:
             self.connect_arcs(run_dict)
             self.assign_hands(run_dict)
             self.estimate_ball_count(run_dict)
-            self.analyze_throw_errors(run_dict)
+            # self.analyze_throw_errors(run_dict)
 
             notes['run'].append(run_dict)
 
         if self._verbosity >= 2:
-            print(f'--------------------------------------------')
+            print('--------------------------------------------')
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
@@ -1512,7 +1528,7 @@ class HEVideoScanner:
     def compile_arc_data(self):
         """
         Work out some basic information about each arc in the video: Throw
-        height, throw position, etc.
+        height, throw position relative to centerline, etc.
         """
         notes = self.notes
         arcs = notes['arcs']
@@ -1530,7 +1546,7 @@ class HEVideoScanner:
             # of the torso box
             xs_b = x + 0.5 * w
             ys_b = y + h
-            # in rotated (juggler) coordinates:
+            # in juggler coordinates:
             x_b = xs_b * c - ys_b * s
             y_b = xs_b * s + ys_b * c
 
@@ -1675,6 +1691,10 @@ class HEVideoScanner:
         arc.hand_throw (guaranteed) and arc.hand_catch (where possible) for
         each arc in the run. Assigns None to hand_catch where it is unknown.
 
+        This algorithm doesn't do the assignment probabilistially, but starts
+        with assigning throws/catches far aay from the centerline and chaining
+        from there.
+
         Args:
             run_dict(dict):
                 dictionary of information for a given run
@@ -1683,9 +1703,545 @@ class HEVideoScanner:
         """
         notes = self.notes
         run = run_dict['throw']
+        debug = False
+
+        if self._verbosity >= 2:
+            print('Assigning hands to arcs...')
+
+        # Start by making high-probability assignments of catches and throws.
+        # Assume that the 25% of throws with the largest x_throw values are
+        # from the left hand, and similarly for the right, and for catches
+        # as well.
+
+        for arc in run:
+            arc.hand_throw = arc.hand_catch = None
+
+        arcs_throw_sort = sorted(run, key=lambda a: a.x_throw)
+        for arc in arcs_throw_sort[:int(len(arcs_throw_sort)/4)]:
+            arc.hand_throw = 'right'
+        for arc in arcs_throw_sort[int(3*len(arcs_throw_sort)/4):]:
+            arc.hand_throw = 'left'
+
+        arcs_catch_sort = sorted(run, key=lambda a: a.x_catch)
+        for arc in arcs_catch_sort[:int(len(arcs_catch_sort)/4)]:
+            arc.hand_catch = 'right'
+        for arc in arcs_catch_sort[int(3*len(arcs_catch_sort)/4):]:
+            arc.hand_catch = 'left'
+
+        """
+        Now the main algorithm. Our strategy is to maintain a queue of arcs
+        that have had hand_throw assigned. We will try to use these arcs to
+        assign hand_throw for nearby arcs that are unassigned, at which point
+        they are added to the queue. Continue this process recursively for as
+        long as we can.
+        """
+        arc_queue = [arc for arc in run if arc.hand_throw is not None]
+
+        if len(arc_queue) == 0:
+            # Nothing assigned yet; assign something to get started
+            arc = max(run, key=lambda a: abs(a.x_throw))
+            arc.hand_throw = 'right' if arc.x_throw < 0 else 'left'
+            arc_queue = [arc]
+            if debug:
+                print(f'no throws assigned; set arc {arc.throw_id} '
+                      f'to throw from {arc.hand_throw}')
+
+        # arcs that originate within 0.05s and 10cm of one another are
+        # assumed to be a multiplex throw from the same hand:
+        mp_window_frames = 0.05 * notes['fps']
+        mp_window_pixels = 10.0 / notes['cm_per_pixel']
+
+        # assume that a hand can't make two distinct throws within 0.23s
+        # (or less) of each other:
+        if run_dict['throws per sec'] is None:
+            min_cycle_frames = 0.23 * notes['fps']
+        else:
+            min_cycle_frames = ((1.0 / run_dict['throws per sec']) * 1.3 *
+                                notes['fps'])
+
+        while True:
+            while len(arc_queue) > 0:
+                assigned_arc = arc_queue.pop()
+
+                """
+                Two cases for other arcs that can have throw hand assigned
+                based on assigned_arc:
+                1. arcs that are very close in time and space, which must
+                   be from the same hand (a multiplex throw)
+                2. arcs thrown within min_cycle_frames of its throw time,
+                   which should be from the opposite hand
+                """
+                mp_arcs = [arc for arc in run if arc.hand_throw is None
+                           and (assigned_arc.f_throw - mp_window_frames) <
+                           arc.f_throw <
+                           (assigned_arc.f_throw + mp_window_frames)
+                           and (assigned_arc.x_throw - mp_window_pixels) <
+                           arc.x_throw <
+                           (assigned_arc.x_throw + mp_window_pixels)]
+                for arc in mp_arcs:
+                    arc.hand_throw = assigned_arc.hand_throw
+                    arc_queue.append(arc)
+                    if debug:
+                        print(f'multiplex throw; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
+
+                close_arcs = [arc for arc in run if arc.hand_throw is None
+                              and (assigned_arc.f_throw - min_cycle_frames)
+                              < arc.f_throw <
+                              (assigned_arc.f_throw + min_cycle_frames)]
+                for arc in close_arcs:
+                    arc.hand_throw = 'right' if (assigned_arc.hand_throw
+                                                 == 'left') else 'left'
+                    arc_queue.append(arc)
+                    if debug:
+                        print(f'close timing; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
+
+            # If there are still unassigned throws, find the one that is
+            # closest in time to one that is already assigned.
+            unassigned_arcs = [arc for arc in run if arc.hand_throw is None]
+            if len(unassigned_arcs) == 0:
+                break
+
+            assigned_arcs = [arc for arc in run if arc.hand_throw is not None]
+            closest_assigned = [(arc, min(assigned_arcs, key=lambda a:
+                                          abs(arc.f_throw - a.f_throw)))
+                                for arc in unassigned_arcs]
+            arc_toassign, arc_assigned = min(closest_assigned,
+                                             key=lambda p: abs(p[0].f_throw -
+                                                               p[1].f_throw))
+
+            # We want to assign a throw hand to arc_toassign. First
+            # check if it's part of a synchronous throw pair, in which
+            # case we'll assign hands based on locations.
+            sync_arcs = [arc for arc in run if
+                         abs(arc.f_throw - arc_toassign.f_throw) <
+                         mp_window_frames and arc is not arc_toassign]
+            if len(sync_arcs) > 0:
+                arc_toassign2 = sync_arcs[0]
+                if arc_toassign.x_throw > arc_toassign2.x_throw:
+                    arc_toassign.hand_throw = 'left'
+                    arc_toassign2.hand_throw = 'right'
+                else:
+                    arc_toassign.hand_throw = 'right'
+                    arc_toassign2.hand_throw = 'left'
+                arc_queue.append(arc_toassign)
+                arc_queue.append(arc_toassign2)
+                if debug:
+                    print(f'sync pair; set arc {arc_toassign.throw_id} '
+                          f'to throw from {arc_toassign.hand_throw}')
+                    print(f'sync pair; set arc {arc_toassign2.throw_id} '
+                          f'to throw from {arc_toassign2.hand_throw}')
+            else:
+                arc_toassign.hand_throw = 'right' if (
+                        arc_assigned.hand_throw == 'left') else 'left'
+                arc_queue.append(arc_toassign)
+                if debug:
+                    print(f'alternating (from arc {arc_assigned.throw_id}); '
+                          f'set arc {arc_toassign.throw_id} to throw from '
+                          f'{arc_toassign.hand_throw}')
+
+        # Do the same process for catching hands
+
+        arc_queue = [arc for arc in run if arc.hand_catch is not None]
+
+        if len(arc_queue) == 0:
+            # Nothing assigned yet; assign something to get started
+            arc = max(run, key=lambda a: abs(a.x_catch))
+            arc.hand_catch = 'right' if arc.x_catch < 0 else 'left'
+            arc_queue = [arc]
+            if debug:
+                print(f'no catches assigned; set arc {arc.throw_id} '
+                      f'to catch from {arc.hand_catch}')
+
+        # assume that a hand can't make two distinct catches within 0.18s
+        # (or less) of each other:
+        if run_dict['throws per sec'] is None:
+            min_cycle_frames = 0.18 * notes['fps']
+        else:
+            min_cycle_frames = ((1.0 / run_dict['throws per sec']) * 1.0 *
+                                notes['fps'])
+
+        while True:
+            while len(arc_queue) > 0:
+                assigned_arc = arc_queue.pop()
+
+                close_arcs = [arc for arc in run if arc.hand_catch is None
+                              and (assigned_arc.f_catch - min_cycle_frames)
+                              < arc.f_catch <
+                              (assigned_arc.f_catch + min_cycle_frames)]
+                for arc in close_arcs:
+                    arc.hand_catch = 'right' if (assigned_arc.hand_catch
+                                                 == 'left') else 'left'
+                    arc_queue.append(arc)
+                    if debug:
+                        print(f'close timing; set arc {arc.throw_id} '
+                              f'to catch in {arc.hand_catch}')
+
+            # If there are still unassigned catches, find the one that is
+            # closest in time to one that is already assigned.
+            unassigned_arcs = [arc for arc in run if arc.hand_catch is None]
+            if len(unassigned_arcs) == 0:
+                break
+
+            assigned_arcs = [arc for arc in run if arc.hand_catch is not None]
+            closest_assigned = [(arc, min(assigned_arcs, key=lambda a:
+                                          abs(arc.f_catch - a.f_catch)))
+                                for arc in unassigned_arcs]
+            arc_toassign, arc_assigned = min(closest_assigned,
+                                             key=lambda p: abs(p[0].f_catch -
+                                                               p[1].f_catch))
+
+            # We want to assign a catch hand to arc_toassign. First
+            # check if it's part of a synchronous catch pair, in which
+            # case we'll assign hands based on locations.
+            sync_arcs = [arc for arc in run if
+                         abs(arc.f_catch - arc_toassign.f_catch) <
+                         mp_window_frames and arc is not arc_toassign]
+            if len(sync_arcs) > 0:
+                arc_toassign2 = sync_arcs[0]
+                if arc_toassign.x_catch > arc_toassign2.x_catch:
+                    arc_toassign.hand_catch = 'left'
+                    arc_toassign2.hand_catch = 'right'
+                else:
+                    arc_toassign.hand_catch = 'right'
+                    arc_toassign2.hand_catch = 'left'
+                arc_queue.append(arc_toassign)
+                arc_queue.append(arc_toassign2)
+                if debug:
+                    print(f'sync pair; set arc {arc_toassign.throw_id} '
+                          f'to catch in {arc_toassign.hand_catch}')
+                    print(f'sync pair; set arc {arc_toassign2.throw_id} '
+                          f'to catch in {arc_toassign2.hand_catch}')
+            else:
+                arc_toassign.hand_catch = 'right' if (
+                        arc_assigned.hand_catch == 'left') else 'left'
+                arc_queue.append(arc_toassign)
+                if debug:
+                    print(f'alternating (from arc {arc_assigned.throw_id}); '
+                          f'set arc {arc_toassign.throw_id} to catch in '
+                          f'{arc_toassign.hand_catch}')
+
+        if self._verbosity >= 2:
+            for arc in run:
+                print(f'arc {arc.throw_id} throwing from {arc.hand_throw}, '
+                      f'catching in {arc.hand_catch}')
+
+    def assign_hands_prob(self, run_dict):
+        """
+        Assign hands to throws for a given run. Do this by filling in
+        arc.hand_throw and arc.hand_catch for each arc in the run.
+
+        This version maximizes the joint probability by flipping each one
+        of the assignments and choosing the likeliest one, iterating to
+        completion.
+
+        Args:
+            run_dict(dict):
+                dictionary of information for a given run
+        Returns:
+            None
+        """
+        run = run_dict['throw']
         vocal = (self._verbosity >= 2)
 
+        for arc in run:
+            arc.hand_throw = 'left' if arc.x_throw > 0 else 'right'
+            arc.hand_catch = 'left' if arc.x_catch > 0 else 'right'
+
+        logP = self.calculateLogP(run_dict)
+
         if vocal:
+            print('----- before assigning hands: -----')
+            for arc in run:
+                print(f'arc {arc.throw_id}: '
+                      f'throw {arc.hand_throw} (x:{arc.x_throw:.1f}, '
+                      f'f:{arc.f_throw:.1f}), '
+                      f'catch {arc.hand_catch} (x:{arc.x_catch:.1f}, '
+                      f'f:{arc.f_catch:.1f})')
+            print(f'logP = {logP}')
+            print('-----------------------------------')
+
+        while True:
+            best_logP = logP
+            best_arc = None
+
+            # flip each throw hand assignment
+            for arc in run:
+                current_assignment = arc.hand_throw
+                arc.hand_throw = ('left' if arc.hand_throw == 'right'
+                                  else 'right')
+                trial_logP = self.calculateLogP(run_dict)
+                """
+                if vocal:
+                    print(f'flipping arc {arc.throw_id} to throw from '
+                          f'{arc.hand_throw}...')
+                    print(f'...logP = {trial_logP}')
+                """
+                if trial_logP > best_logP:
+                    best_logP = trial_logP
+                    (best_arc, best_hand_throw,
+                        best_hand_catch) = (arc, arc.hand_throw,
+                                            arc.hand_catch)
+                    if vocal:
+                        print(f'^^^^^ NEW OPTIMUM (logP = '
+                              f'{best_logP:.2f}) ^^^^^')
+                arc.hand_throw = current_assignment
+
+            # flip each catch hand assignment
+            for arc in run:
+                current_assignment = arc.hand_catch
+                arc.hand_catch = ('left' if arc.hand_catch == 'right'
+                                  else 'right')
+                trial_logP = self.calculateLogP(run_dict)
+                """
+                if vocal:
+                    print(f'flipping arc {arc.throw_id} to catch in '
+                          f'{arc.hand_catch}...')
+                    print(f'...logP = {trial_logP}')
+                """
+                if trial_logP > best_logP:
+                    best_logP = trial_logP
+                    (best_arc, best_hand_throw,
+                        best_hand_catch) = (arc, arc.hand_throw,
+                                            arc.hand_catch)
+                    if vocal:
+                        print(f'^^^^^ NEW OPTIMUM (logP = '
+                              f'{best_logP:.2f}) ^^^^^')
+                arc.hand_catch = current_assignment
+
+            if best_arc is not None:
+                best_arc.hand_catch = best_hand_catch
+                best_arc.hand_throw = best_hand_throw
+                logP = best_logP
+                """
+                if vocal:
+                    print('---------- CONFIG CHANGE: ---------')
+                    for arc in run:
+                        print(f'arc {arc.throw_id}: '
+                              f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                              f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+                    print(f'logP = {logP}')
+                    print('-----------------------------------')
+                """
+            else:
+                break
+
+        if vocal:
+            print('----- after assigning hands: -----')
+            for arc in run:
+                print(f'arc {arc.throw_id}: '
+                      f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                      f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+            print(f'logP = {logP}')
+            print('----------------------------------')
+
+    def assign_hands_annealing(self, run_dict):
+        """
+        Assign hands to throws for a given run. Do this by filling in
+        arc.hand_throw and arc.hand_catch for each arc in the run.
+
+        This version uses simulated annealing to optimize the assignment.
+
+        Args:
+            run_dict(dict):
+                dictionary of information for a given run
+        Returns:
+            None
+        """
+        run = run_dict['throw']
+        vocal = (self._verbosity >= 2)
+
+        for arc in run:
+            arc.hand_throw = 'left' if arc.x_throw > 0 else 'right'
+            arc.hand_catch = 'left' if arc.x_catch > 0 else 'right'
+
+        logP = self.calculateLogP(run_dict)
+
+        if vocal:
+            print('----- before assigning hands: -----')
+            for arc in run:
+                print(f'arc {arc.throw_id}: '
+                      f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                      f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+            print(f'logP = {logP}')
+            print('-----------------------------------')
+
+        # parameters that define the annealing schedule
+        T_max = 2.0
+        T_min = 0.05
+        steps = 2000 * len(run)
+
+        for i in range(steps):
+            temperature = T_max * T_min / ((T_max - T_min) * i / steps + T_min)
+
+            test_arc = random.choice(run)
+
+            (saved_hand_catch, saved_hand_throw) = (test_arc.hand_catch,
+                                                    test_arc.hand_throw)
+
+            if random.random() < 0.5:
+                test_arc.hand_throw = ('left' if test_arc.hand_throw == 'right'
+                                       else 'right')
+            else:
+                test_arc.hand_catch = ('left' if test_arc.hand_catch == 'right'
+                                       else 'right')
+
+            trial_logP = self.calculateLogP(run_dict)
+
+            if trial_logP > logP:
+                # always accept a better state
+                logP = trial_logP
+                if vocal:
+                    print(f'------ BETTER STATE (step {i}/{steps}): -------')
+                    for arc in run:
+                        print(f'arc {arc.throw_id}: '
+                              f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                              f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+                    print(f'logP = {logP}')
+                    # print('--------------------------------------------')
+                continue
+
+            # accept a worse state with probability P=P_trans
+            P_trans = exp((trial_logP - logP) / temperature)
+
+            if random.random() < P_trans:
+                logP = trial_logP
+                if vocal:
+                    print(f'------ WORSE STATE (step {i}/{steps}): -------')
+                    for arc in run:
+                        print(f'arc {arc.throw_id}: '
+                              f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                              f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+                    print(f'logP = {logP}')
+                    # print('--------------------------------------------')
+            else:
+                # no transition so restore and continue
+                (test_arc.hand_catch, test_arc.hand_throw) = (saved_hand_catch,
+                                                              saved_hand_throw)
+
+        if vocal:
+            print('----- after assigning hands: -----')
+            for arc in run:
+                print(f'arc {arc.throw_id}: '
+                      f'throw {arc.hand_throw} ({arc.f_throw:.1f}), '
+                      f'catch {arc.hand_catch} ({arc.f_catch:.1f})')
+            print(f'logP = {logP}')
+            print('----------------------------------')
+
+    def calculateLogP(self, run_dict):
+        """
+        Calculate the log of the joint probability distribution for a given
+        set of hand assignments. This is unnormalized so it is useful only for
+        relative comparisons: What is likelier than what.
+        """
+        notes = self.notes
+        run = run_dict['throw']
+        debug = True
+
+        fmin = 0.3
+        fx1 = -20.0 / notes['cm_per_pixel']
+        fx2 = 10.0 / notes['cm_per_pixel']
+        gmin = 0.3
+        gx1 = -20.0 / notes['cm_per_pixel']
+        gx2 = 10.0 / notes['cm_per_pixel']
+        hmin = 0.1
+        ht1 = (1.0 / (0.5 * 10)) * notes['fps']
+        ht2 = (1.0 / (0.5 * 5)) * notes['fps']
+        imin = 0.03
+        it1 = (1.0 / (0.5 * 8)) * notes['fps']
+        it2 = (1.0 / (0.5 * 4)) * notes['fps']
+        ix_multi = 10.0 / notes['cm_per_pixel']
+        it_multi = 0.05 * notes['fps']
+        K = 0.7
+
+        logP = 0.0
+
+        for i, arc in enumerate(run):
+            # f term: x-positions of throws
+            if arc.hand_throw == 'left' and arc.x_throw < fx2:
+                logP += log(fmin if arc.x_throw < fx1 else
+                            fmin + (1.0 - fmin) * (arc.x_throw - fx1) /
+                            (fx2 - fx1))
+                if debug:
+                    print(f'arc {arc.throw_id} adding to f-term')
+            elif arc.hand_throw == 'right' and -arc.x_throw < fx2:
+                logP += log(fmin if -arc.x_throw < fx1 else
+                            fmin + (1.0 - fmin) * (-arc.x_throw - fx1) /
+                            (fx2 - fx1))
+                if debug:
+                    print(f'arc {arc.throw_id} adding to f-term')
+
+            # g term: x-positions of catches
+            if arc.hand_catch == 'left' and arc.x_catch < gx2:
+                logP += log(gmin if arc.x_catch < gx1 else
+                            gmin + (1.0 - gmin) * (arc.x_catch - gx1) /
+                            (gx2 - gx1))
+                if debug:
+                    print(f'arc {arc.throw_id} adding to g-term')
+            elif arc.hand_catch == 'right' and -arc.x_catch < gx2:
+                logP += log(gmin if -arc.x_catch < gx1 else
+                            gmin + (1.0 - gmin) * (-arc.x_catch - gx1) /
+                            (gx2 - gx1))
+                if debug:
+                    print(f'arc {arc.throw_id} adding to g-term')
+
+            for arc2 in run[(i + 1):]:
+                # h term: timing of catches
+                dt = abs(arc.f_catch - arc2.f_catch)
+
+                if dt < ht2 and arc.hand_catch == arc2.hand_catch:
+                    logP += log(hmin if dt < ht1 else
+                                hmin + (1.0 - hmin) * (dt - ht1) / (ht2 - ht1))
+                    if debug:
+                        print(f'arcs {arc.throw_id} and {arc2.throw_id} '
+                              'adding to h-term')
+
+                # i term: timing of throws
+                dt = abs(arc.f_throw - arc2.f_throw)
+
+                if dt < it2 and arc.hand_throw == arc2.hand_throw:
+                    dx = abs(arc.x_throw - arc2.x_throw)
+                    if dt < it_multi and dx < ix_multi:
+                        # multiplexed throw, logP += 0
+                        pass
+                    else:
+                        logP += log(imin if dt < it1 else
+                                    imin + (1.0 - imin) * (dt-it1)/(it2-it1))
+                        if debug:
+                            print(f'arcs {arc.throw_id} and {arc2.throw_id} '
+                                  'adding to i-term')
+
+            # K term: agreement with next/prev assignments
+            if arc.prev is not None and arc.hand_throw != arc.prev.hand_catch:
+                logP += log(1.0 - K)
+                if debug:
+                    print(f'arcs {arc.throw_id} and {arc.prev.throw_id} '
+                          'adding to K-term')
+
+        return logP
+
+    def assign_hands_noprob(self, run_dict):
+        """
+        Assign hands to throws for a given run. Do this by filling in
+        arc.hand_throw (guaranteed) and arc.hand_catch (where possible) for
+        each arc in the run. Assigns None to hand_catch where it is unknown.
+
+        This algorithm doesn't do the assignment probabilistially, but starts
+        with assigning throws/catches far aay from the centerline and chaining
+        from there.
+
+        Args:
+            run_dict(dict):
+                dictionary of information for a given run
+        Returns:
+            None
+        """
+        notes = self.notes
+        run = run_dict['throw']
+        debug = True
+
+        if self._verbosity >= 2:
             print('Assigning hands to arcs...')
 
         # Start by making high-probability assignments of catching hands.
@@ -1702,14 +2258,14 @@ class HEVideoScanner:
                 arc.hand_catch = 'right'
             else:
                 arc.hand_catch = None
-            if vocal and arc.hand_catch is not None:
+            if debug and arc.hand_catch is not None:
                 print(f'wide catch; set arc {arc.throw_id} '
                       f'to catch in {arc.hand_catch}')
 
         # Propagate those assignments to any subsequent throws of same balls:
         for arc in run:
             arc.hand_throw = None if arc.prev is None else arc.prev.hand_catch
-            if vocal and arc.hand_throw is not None:
+            if debug and arc.hand_throw is not None:
                 print(f'propagating; set arc {arc.throw_id} '
                       f'to throw from {arc.hand_throw}')
 
@@ -1727,7 +2283,7 @@ class HEVideoScanner:
             arc = max(run, key=lambda a: abs(a.x_throw))
             arc.hand_throw = 'right' if arc.x_throw < 0 else 'left'
             arc_queue = [arc]
-            if vocal:
+            if debug:
                 print(f'no throws assigned; set arc {arc.throw_id} '
                       f'to throw from {arc.hand_throw}')
 
@@ -1762,7 +2318,7 @@ class HEVideoScanner:
                 for arc in mp_arcs:
                     arc.hand_throw = assigned_arc.hand_throw
                     arc_queue.append(arc)
-                    if vocal:
+                    if debug:
                         print(f'multiplex throw; set arc {arc.throw_id} '
                               f'to throw from {arc.hand_throw}')
 
@@ -1774,7 +2330,7 @@ class HEVideoScanner:
                     arc.hand_throw = 'right' if (assigned_arc.hand_throw
                                                  == 'left') else 'left'
                     arc_queue.append(arc)
-                    if vocal:
+                    if debug:
                         print(f'close timing; set arc {arc.throw_id} '
                               f'to throw from {arc.hand_throw}')
 
@@ -1808,7 +2364,7 @@ class HEVideoScanner:
                     arc_toassign2.hand_throw = 'left'
                 arc_queue.append(arc_toassign)
                 arc_queue.append(arc_toassign2)
-                if vocal:
+                if debug:
                     print(f'sync pair; set arc {arc_toassign.throw_id} '
                           f'to throw from {arc_toassign.hand_throw}')
                     print(f'sync pair; set arc {arc_toassign2.throw_id} '
@@ -1817,7 +2373,7 @@ class HEVideoScanner:
                 arc_toassign.hand_throw = 'right' if (
                         arc_assigned.hand_throw == 'left') else 'left'
                 arc_queue.append(arc_toassign)
-                if vocal:
+                if debug:
                     print(f'alternating (from arc {arc_assigned.throw_id}); '
                           f'set arc {arc_toassign.throw_id} to throw from '
                           f'{arc_toassign.hand_throw}')
@@ -1826,7 +2382,7 @@ class HEVideoScanner:
         for arc in run:
             if arc.prev is not None:
                 arc.prev.hand_catch = arc.hand_throw
-                if vocal and arc.hand_throw is not None:
+                if debug and arc.hand_throw is not None:
                     print(f'propagating; set arc {arc.prev.throw_id} '
                           f'to catch in {arc.hand_throw}')
 
@@ -1896,7 +2452,7 @@ class HEVideoScanner:
             return
 
         balls = run_dict['balls']
-        PoverW_ideal = 0.32
+        # PoverW_ideal = 0.32
 
         sorted_run = sorted(run, key=lambda a: a.throw_id)
 
@@ -1924,12 +2480,11 @@ class HEVideoScanner:
 
             # print('len(window) = {}'.format(len(window)))
 
+            """
             f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
             c_ideal = C / N
             e_ideal = arc.e
-
-
-
+            """
 
             """
             if sum(1 for t in run if t.hand_catch == 'left') == 0:
@@ -2153,7 +2708,6 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
     cv2.namedWindow(filename, cv2.WINDOW_NORMAL)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    # framenum = framereads = startframe
     framenum = framereads = 0
     show_arc_id = False
 
@@ -2170,12 +2724,14 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
         if framenum >= startframe:
             if framenum in body:
-                x, y, w, h, _ = notes['body'][framenum]
+                # draw torso bounding box
+                x, y, w, h, detected = notes['body'][framenum]
                 x = int(round(x))
                 y = int(round(y))
                 w = int(round(w))
                 h = int(round(h))
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                color = (255, 0, 0) if detected else (0, 0, 255)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
 
             if framenum in tags:
                 for tag in tags[framenum]:
@@ -2185,14 +2741,14 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                                int(round(tag.radius)), color, 1)
 
             for arc in arcs:
-                if notes['version'] < 3:
+                if notes['step'] < 3:
                     start, end = arc.get_frame_range(notes)
                 else:
-                    start, end = arc.get_tag_range()
+                    start, end = arc.f_throw, arc.f_catch
                 if start <= framenum <= end:
                     x, y = arc.get_position(framenum, notes)
-                    x = int(round(x))
-                    y = int(round(y))
+                    x = int(x + 0.5)
+                    y = int(y + 0.5)
                     if (notes is not None and len(arc.tags) <
                             notes['scanner_params']['min_tags_per_arc']):
                         temp, _ = arc.get_tag_range()
@@ -2206,13 +2762,24 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
                     color = (0, 255, 0) if arc_has_tag else (0, 0, 255)
                     cv2.circle(frame, (x, y), 2, color, -1)
+
                     if show_arc_id:
+                        arc_id = (arc.id_ if notes['step'] < 4
+                                  else arc.throw_id)
                         cv2.rectangle(frame, (x+10, y+5),
                                       (x+40, y-4), (0, 0, 0), -1)
-                        cv2.putText(frame, format(arc.id_, ' 4d'),
+                        cv2.putText(frame, format(arc_id, ' 4d'),
                                     (x+13, y+4),
-                                    font, 0.6, (255, 255, 255), 1,
+                                    font, 0.3, (255, 255, 255), 1,
                                     cv2.LINE_AA)
+
+                    if arc.x_origin is not None:
+                        # find (x_origin, y_origin) in screen coordinates:
+                        c = cos(notes['camera_tilt'])
+                        s = sin(notes['camera_tilt'])
+                        xo_scr = int(arc.x_origin*c + arc.y_origin*s + 0.5)
+                        yo_scr = int(-arc.x_origin*s + arc.y_origin*c + 0.5)
+                        cv2.circle(frame, (xo_scr, yo_scr), 3, (255, 0, 0), -1)
 
             cv2.rectangle(frame, (3, 3), (80, 27), (0, 0, 0), -1)
             cv2.putText(frame, format(framenum, ' 7d'), (10, 20), font, 0.5,
@@ -2232,7 +2799,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                 if keycode == ord('q'):     # Q on keyboard exits
                     stop_playback = True
                     break
-                elif keycode == ord('i'):
+                elif keycode == ord('i'):   # I toggles throw IDs
                     show_arc_id = not show_arc_id
                     break
                 if not keywait or keycode != 0xFF:
@@ -2259,43 +2826,44 @@ testing and debugging the video scanner.
 if __name__ == '__main__':
 
     # _filename = 'movies/juggling_test_5.mov'
-    # _filename = 'movies/TBTB3_9balls.mov'
-    # _filename = 'movies/TBTB3_9balls_temp.mp4'
+    _filename = 'movies/TBTB3_9balls.mov'
     # _filename = 'movies/GOPR0463.MP4'
     # _filename = 'movies/GOPR0466.MP4'
     # _filename = 'movies/GOPR0467.MP4'
-    _filename = 'movies/GOPR0493.MP4'
+    # _filename = 'movies/GOPR0493.MP4'
     # _filename = 'movies/8ballsLonger.mov'
     # _filename = 'movies/vert_test.mp4'
+    _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/GOPR0531_640x480.mp4'
-    _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
 
     watch_video = False
 
     # print(cv2.getBuildInformation())
 
     if watch_video:
-        notes_version = 2
+        notes_step = 4
+        start_frame = 700
 
-        if 1 <= notes_version <= 4:
+        if 1 <= notes_step <= 4:
             _filepath = os.path.abspath(_filename)
             _dirname = os.path.dirname(_filepath)
             _hawkeye_dir = os.path.join(_dirname, '__Hawkeye__')
             _basename = os.path.basename(_filepath)
             _basename_noext = os.path.splitext(_basename)[0]
 
-            if notes_version == 4:
+            if notes_step == 4:
                 _basename_notes = _basename_noext + '_notes.pkl'
             else:
                 _basename_notes = _basename_noext + '_notes{}.pkl'.format(
-                                                            notes_version)
+                                                            notes_step)
             _filepath_notes = os.path.join(_hawkeye_dir, _basename_notes)
 
             mynotes = HEVideoScanner.read_notes(_filepath_notes)
         else:
             mynotes = None
         play_video(_filename, notes=mynotes, outfilename=None,
-                   startframe=0, keywait=True)
+                   startframe=start_frame, keywait=True)
     else:
         startstep = 4
         endstep = 4
