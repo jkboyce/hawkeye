@@ -2,7 +2,7 @@
 #
 # Data types used by Hawkeye to describe/annotate juggling videos.
 #
-# Copyright 2018 Jack Boyce (jboyce@gmail.com)
+# Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 from math import sqrt, sin, cos, acos
 import statistics
@@ -33,8 +33,8 @@ class Ballarc:
         # assigned in processing steps 2 and 3:
         self.f_peak = 0.0       # frame number (float) when arc peaks
         self.a = 0.0            # parameters defining parabolic path
-        self.b = 0.0
-        self.c = 0.0
+        self.b = 0.0            # all positions are in juggler coordinates
+        self.c = 0.0            # and pixel units
         self.e = 0.0
         self.tags = set()       # set of attached Balltags
         self.id_ = None         # unique sequentially-assigned identifier
@@ -43,8 +43,8 @@ class Ballarc:
         self.next = None
         self.prev = None
         self.hand_throw = None
-        self.f_throw = None
-        self.x_throw = None
+        self.f_throw = None     # frame number
+        self.x_throw = None     # juggler coordinates, pixel units
         self.hand_catch = None
         self.f_catch = None
         self.x_catch = None
