@@ -919,9 +919,9 @@ class HEMainWindow(QMainWindow):
 
     def syncPlayer(self):
         """
-        This should be called whenever the currently-viewed movie changes. It
-        syncs the media player to the new video file and adjusts other UI
-        elements as needed.
+        This is called whenever the currently-viewed movie changes. It syncs
+        the media player to the new video file and adjusts other UI elements
+        as needed.
         """
         if self.currentVideoItem is None:
             return
@@ -929,7 +929,7 @@ class HEMainWindow(QMainWindow):
         if videopath is None:
             # no converted video yet: default to original video file
             videopath = self.currentVideoItem._filepath
-        print('syncing player to video file {}'.format(videopath))
+        # print('syncing player to video file {}'.format(videopath))
 
         self.item = self.currentVideoItem._graphicsvideoitem
         self.scene = self.currentVideoItem._graphicsscene
@@ -943,6 +943,8 @@ class HEMainWindow(QMainWindow):
         self.playButton.setEnabled(True)
         self.backButton.setEnabled(False)
         self.forwardButton.setEnabled(False)
+
+        self.playerErrorLabel.setText('')
 
     @Slot()
     def exitCall(self):
@@ -1207,6 +1209,9 @@ class HEMainWindow(QMainWindow):
 
     @Slot()
     def handlePlayerError(self):
+        """
+        Called by the media player when there is an error.
+        """
         self.playButton.setEnabled(False)
         err = self.mediaPlayer.errorString()
         code = self.mediaPlayer.error()
@@ -1220,11 +1225,14 @@ class HEMainWindow(QMainWindow):
 
     def keyPressEvent(self, e):
         """
+        Overrides QMainWindow.keyPressEvent()
+
         We have to work around the fact that neither Qt nor Python can give
-        us the instantanous state of the keyboard, so we use key repeats to
-        give us the desired function of the arrow keys. Do all of the
-        repeated frame advancing in HEVideoView.paintEvent() so we don't get
-        frame skips.
+        us the instantaneous state of the keyboard, so we use key repeats to
+        give us the desired function of the arrow keys which is to continue
+        cueing frame-by-frame while a key is held. Do all of the repeated
+        frame advancing in HEVideoView.paintEvent() so we don't get frame
+        skips.
 
         keycodes at http://doc.qt.io/qt-5/qt.html#Key-enum
         """
@@ -1746,7 +1754,7 @@ class HEVideoList(QListWidget):
 class HEViewList(QListWidget):
     """
     Subclass of standard QListWidget to show run-related info for a video. I
-    wonder why QWidget doesn't have a setSizeHint() method.
+    wonder why QWidget doesn't have a setSizeHint() method?
     """
     def __init__(self, parent=None):
         super().__init__(parent=parent)
