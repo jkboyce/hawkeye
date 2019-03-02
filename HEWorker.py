@@ -324,7 +324,9 @@ class HEWorker(QObject):
                         os.path.dirname(os.path.realpath(__file__)),
                         'packaging\\windows')
             elif platform.system() == 'Darwin':
-                ffmpeg_dir = '/usr/local/bin'
+                ffmpeg_dir = os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)),
+                        'packaging/osx')
             elif platform.system() == 'Linux':
                 ffmpeg_dir = '/usr/local/bin'   # fill this in JKB
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')
