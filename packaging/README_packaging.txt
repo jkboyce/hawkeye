@@ -13,3 +13,7 @@ Build instructions on OS X:
 2. Type 'pyinstaller Hawkeye_osx.spec'
 3. This should create a folder 'dist' in your current directory containing
    Hawkeye.app. Everything else in 'build' and 'dist' can be deleted.
+
+Build instructions on Windows:
+
+1. 
