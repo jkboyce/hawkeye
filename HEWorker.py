@@ -322,7 +322,7 @@ class HEWorker(QObject):
             if platform.system() == 'Windows':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging/windows')
+                        'packaging\\windows')
             elif platform.system() == 'Darwin':
                 ffmpeg_dir = '/usr/local/bin'
             elif platform.system() == 'Linux':
