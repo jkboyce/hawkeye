@@ -1,0 +1,49 @@
+name: hawkeye
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - altgraph=0.15=py_0
+  - ca-certificates=2018.11.29=ha4d7672_0
+  - certifi=2018.11.29=py36_1000
+  - future=0.17.0=py36_1000
+  - libiconv=1.15=hfa6e2cd_1003
+  - libxml2=2.9.8=h9ce36c8_1005
+  - libxslt=1.1.32=heafd4d3_1002
+  - macholib=1.11=py_0
+  - openssl=1.0.2p=hfa6e2cd_1001
+  - pefile=2018.8.8=py_0
+  - pycrypto=2.6.1=py36hfa6e2cd_1002
+  - pyinstaller=3.4=py36h7602738_0
+  - pyside2=5.6.0a1=py36h20f30f1_3
+  - pywin32=224=py36hfa6e2cd_1000
+  - pywin32-ctypes=0.2.0=py36_1000
+  - sqlite=3.26.0=hfa6e2cd_1000
+  - blas=1.0=mkl
+  - git=2.19.1=h6bb4b03_0
+  - hdf5=1.10.2=hac2f561_1
+  - icc_rt=2017.0.4=h97af966_0
+  - icu=58.2=ha66f8fd_1
+  - intel-openmp=2018.0.3=0
+  - jpeg=9b=hb83a4c4_2
+  - libopencv=3.4.1=h875b8b8_3
+  - libpng=1.6.34=h79bbb47_0
+  - libtiff=4.0.9=h36446d0_2
+  - mkl=2018.0.3=1
+  - mkl_fft=1.0.4=py36h1e22a9b_1
+  - mkl_random=1.0.1=py36h77b88f5_1
+  - numpy=1.15.0=py36h9fa60d3_0
+  - numpy-base=1.15.0=py36h4a99626_0
+  - opencv=3.4.1=py36h6fd60c2_3
+  - pip=10.0.1=py36_0
+  - py-opencv=3.4.1=py36h1b0d24d_3
+  - python=3.6.6=hea74fb7_0
+  - qt=5.6.2=vc14h6f8c307_12
+  - setuptools=40.0.0=py36_0
+  - vc=14.1=h0510ff6_3
+  - vs2015_runtime=15.5.2=3
+  - wheel=0.31.1=py36_0
+  - wincertstore=0.2=py36h7fe50ca_0
+  - zlib=1.2.11=h8395fce_2
+prefix: C:\Users\Jack\Miniconda3\envs\hawkeye
+
