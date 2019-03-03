@@ -24,10 +24,4 @@ if __name__ == '__main__':
     window.raise_()
     app.setActiveWindow(window)
 
-    if profile:
-        import cProfile
-
-        cProfile.run('app.exec_()')
-        sys.exit()
-    else:
-        sys.exit(app.exec_())
+    sys.exit(app.exec_())

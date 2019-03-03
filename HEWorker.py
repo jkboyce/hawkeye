@@ -256,8 +256,9 @@ class HEWorker(QObject):
         hawkeye_dir = fileinfo['hawkeye_dir']
         file_basename_noext = fileinfo['file_basename_noext']
 
-        displayvid_resolution = self._resolution if (notes is not None and
-                self._resolution < notes['frame_height']) else 0
+        displayvid_resolution = self._resolution if (
+            notes is not None and self._resolution < notes['frame_height']
+            ) else 0
 
         if displayvid_resolution == 0:
             displayvid_basename = file_basename_noext + '_keyint1.mp4'
