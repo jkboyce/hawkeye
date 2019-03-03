@@ -324,7 +324,7 @@ class HEVideoScanner:
             # we are running in a normal Python environment
             base_dir = os.path.dirname(os.path.realpath(__file__))
         body_cascade_file = os.path.join(base_dir,
-                                         'haarcascade_upperbody.xml')
+                                         'resources/haarcascade_upperbody.xml')
         body_cascade = cv2.CascadeClassifier(body_cascade_file)
 
         framenum = framereads = 0

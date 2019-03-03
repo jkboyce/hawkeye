@@ -224,13 +224,13 @@ class HEMainWindow(QMainWindow):
                                             QSizePolicy.Maximum)
         aboutButton = QToolButton()
         aboutButton.setIcon(QIcon(os.path.join(base_dir,
-                                               'about_icon.png')))
+                                               'resources/about_icon.png')))
         aboutButton.setIconSize(QSize(20, 20))
         aboutButton.setStyleSheet('border: none;')
         aboutButton.clicked.connect(self.showAbout)
         prefsButton = QToolButton()
-        prefsButton.setIcon(QIcon(os.path.join(base_dir,
-                                               'preferences_icon.png')))
+        prefsButton.setIcon(QIcon(
+                os.path.join(base_dir, 'resources/preferences_icon.png')))
         prefsButton.setIconSize(QSize(20, 20))
         prefsButton.setStyleSheet('border: none;')
         prefsButton.clicked.connect(self.showPrefs)

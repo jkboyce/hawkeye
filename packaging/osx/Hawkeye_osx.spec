@@ -13,9 +13,9 @@ a = Analysis(['../../Hawkeye.py'],
                        ('libpostproc.54.dylib', '.'),
                        ('libxvidcore.4.dylib', '.')
                       ],
-             datas=[('../../haarcascade_upperbody.xml', '.'),
-                    ('../../about_icon.png', '.'),
-                    ('../../preferences_icon.png', '.')
+             datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
+                    ('../../resources/about_icon.png', './resources'),
+                    ('../../resources/preferences_icon.png', './resources')
              ],
              hiddenimports=[],
              hookspath=[],
