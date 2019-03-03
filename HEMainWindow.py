@@ -10,14 +10,14 @@ from math import ceil, floor, atan, pi
 
 from PySide2.QtCore import QDir, QSize, Qt, QUrl, QThread, Signal, Slot
 from PySide2.QtGui import QFont, QTextCursor, QIcon, QColor
-from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel,
-                               QPushButton, QSizePolicy, QSlider, QStyle,
-                               QVBoxLayout, QWidget, QGraphicsView,
-                               QGraphicsScene, QListWidgetItem,
-                               QSplitter, QStackedWidget, QPlainTextEdit,
-                               QProgressBar, QMainWindow, QAction, QComboBox,
-                               QAbstractItemView, QToolButton, QCheckBox,
-                               QTableWidget, QTableWidgetItem)
+from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
+                               QSizePolicy, QSlider, QStyle, QVBoxLayout,
+                               QWidget, QGraphicsView, QGraphicsScene,
+                               QListWidgetItem, QSplitter, QStackedWidget,
+                               QPlainTextEdit, QProgressBar, QMainWindow,
+                               QAction, QComboBox, QAbstractItemView,
+                               QToolButton, QCheckBox, QTableWidget,
+                               QTableWidgetItem)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -185,14 +185,12 @@ class HEMainWindow(QMainWindow):
         self.playbackRate.currentIndexChanged.connect(self.on_rate_change)
         self.playbackRate.setCurrentIndex(rates.index('0.5'))
 
-        # self.backButton = QPushButton('&<', self)
         self.backButton = QPushButton()
         self.backButton.setEnabled(False)
         self.backButton.setIcon(self.style().standardIcon(
                 QStyle.SP_MediaSkipBackward))
         self.backButton.clicked.connect(self.stepBack)
 
-        # self.forwardButton = QPushButton('&>', self)
         self.forwardButton = QPushButton()
         self.forwardButton.setEnabled(False)
         self.forwardButton.setIcon(self.style().standardIcon(
@@ -219,7 +217,6 @@ class HEMainWindow(QMainWindow):
         errorbar_layout = QHBoxLayout()
         errorbar_layout.setContentsMargins(0, 0, 7, 0)
         self.playerErrorLabel = QLabel()
-        # self.playerErrorLabel.setText('This is where error output goes.')
         self.playerErrorLabel.setSizePolicy(QSizePolicy.Preferred,
                                             QSizePolicy.Maximum)
         aboutButton = QToolButton()
@@ -1245,7 +1242,7 @@ class HEMainWindow(QMainWindow):
 
         if key == Qt.Key_Space:
             self.togglePlay()
-        elif key == Qt.Key_Right:
+        elif key == Qt.Key_Right and notes is not None:
             # advance movie by one frame
             self.playBackwardUntil = None
             if self.playForwardUntil is None:
@@ -1262,7 +1259,7 @@ class HEMainWindow(QMainWindow):
                 overshooting by one frame.
                 """
                 self.playForwardUntil = framenum + 2
-        elif key == Qt.Key_Left:
+        elif key == Qt.Key_Left and notes is not None:
             # step back one frame
             self.playForwardUntil = None
             if self.playBackwardUntil is None:
@@ -1271,7 +1268,7 @@ class HEMainWindow(QMainWindow):
                 self.stepBack()
             else:
                 self.playBackwardUntil = framenum - 2
-        elif key == Qt.Key_X:
+        elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if notes is None:
                 return
@@ -1289,7 +1286,7 @@ class HEMainWindow(QMainWindow):
             self.playBackwardUntil = None
             self.pauseMovie()
             self.stepForward()
-        elif key == Qt.Key_Z:
+        elif key == Qt.Key_Z and notes is not None:
             # play backward until previous throw in run
             if notes is None:
                 return
@@ -1308,7 +1305,7 @@ class HEMainWindow(QMainWindow):
             self.playBackwardUntil = min(round(throwframes[0]), framenum - 1)
             self.pauseMovie()
             self.stepBack()
-        elif key == Qt.Key_S:
+        elif key == Qt.Key_S and notes is not None:
             # go to next run
             if (viewitem is not None and viewitem._type == 'run'):
                 row = self.viewList.row(viewitem)
@@ -1321,7 +1318,7 @@ class HEMainWindow(QMainWindow):
                     self.setFramenum(nextitem._startframe)
                     self.playForwardUntil = None
                     self.playBackwardUntil = None
-        elif key == Qt.Key_A:
+        elif key == Qt.Key_A and notes is not None:
             # go to previous run, or start of current run if we're more than
             # one second into playback
             if (viewitem is not None and viewitem._type == 'run'):
