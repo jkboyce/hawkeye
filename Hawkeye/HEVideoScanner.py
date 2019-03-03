@@ -14,7 +14,7 @@ from statistics import median, mean
 
 import cv2
 
-from HETypes import Balltag, Ballarc
+from Hawkeye.HETypes import Balltag, Ballarc
 
 
 class HEVideoScanner:
@@ -614,9 +614,9 @@ class HEVideoScanner:
                             done_making_arcs = True
 
                         if self._verbosity >= 2:
-                            print('made arc number {}, f_peak = {}'
-                                  ', e = {}'.format(len(arclist), arc.f_peak,
-                                                    arc.e))
+                            print(f'made arc number {len(arclist)}, '
+                                  f'frame_peak = {arc.f_peak:.3f}, '
+                                  f'accel = {arc.e:.3f}')
                     else:
                         for t in arc.tags:
                             t.weight = None

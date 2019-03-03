@@ -13,7 +13,7 @@ import platform
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
-from HEVideoScanner import HEVideoScanner
+from Hawkeye.HEVideoScanner import HEVideoScanner
 
 
 class HEWorker(QObject):
@@ -322,11 +322,11 @@ class HEWorker(QObject):
             if platform.system() == 'Windows':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging\\windows')
+                        '..\\packaging\\windows')
             elif platform.system() == 'Darwin':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging/osx')
+                        '../packaging/osx')
             elif platform.system() == 'Linux':
                 ffmpeg_dir = '/usr/local/bin'   # fill this in JKB
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')
