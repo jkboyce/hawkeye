@@ -6,22 +6,18 @@
 
 import os
 import sys
-import platform
-from math import log10, ceil, floor, atan, pi
+from math import ceil, floor, atan, pi
 
-from PySide2.QtCore import (QDir, QSize, Qt, QUrl, QPoint, QPointF, QThread,
-                            Signal, Slot)
-from PySide2.QtGui import (QPainter, QFont, QTextCursor, QPainterPath, QIcon,
-                           QPen, QColor)
+from PySide2.QtCore import QDir, QSize, Qt, QUrl, QThread, Signal, Slot
+from PySide2.QtGui import QFont, QTextCursor, QIcon, QColor
 from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel,
                                QPushButton, QSizePolicy, QSlider, QStyle,
                                QVBoxLayout, QWidget, QGraphicsView,
-                               QGraphicsScene, QListWidget, QListWidgetItem,
+                               QGraphicsScene, QListWidgetItem,
                                QSplitter, QStackedWidget, QPlainTextEdit,
                                QProgressBar, QMainWindow, QAction, QComboBox,
                                QAbstractItemView, QToolButton, QCheckBox,
-                               QTableWidget, QTableWidgetItem,
-                               QStyledItemDelegate)
+                               QTableWidget, QTableWidgetItem)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 

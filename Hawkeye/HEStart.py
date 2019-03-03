@@ -31,7 +31,3 @@ def run_hawkeye():
         sys.exit()
     else:
         sys.exit(app.exec_())
-
-
-if __name__ == '__main__':
-    run_hawkeye()

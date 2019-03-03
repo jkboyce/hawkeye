@@ -5,24 +5,16 @@
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
-import sys
 import platform
-from math import log10, ceil, floor, atan, pi
+from math import log10, floor
 
-from PySide2.QtCore import (QDir, QSize, Qt, QUrl, QPoint, QPointF, QThread,
-                            Signal, Slot)
-from PySide2.QtGui import (QPainter, QFont, QTextCursor, QPainterPath, QIcon,
-                           QPen, QColor)
-from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel,
-                               QPushButton, QSizePolicy, QSlider, QStyle,
-                               QVBoxLayout, QWidget, QGraphicsView,
+from PySide2.QtCore import QSize, Qt, QPoint, QPointF
+from PySide2.QtGui import QPainter, QPainterPath, QPen
+from PySide2.QtWidgets import (QWidget, QGraphicsView,
                                QGraphicsScene, QListWidget, QListWidgetItem,
-                               QSplitter, QStackedWidget, QPlainTextEdit,
-                               QProgressBar, QMainWindow, QAction, QComboBox,
-                               QAbstractItemView, QToolButton, QCheckBox,
-                               QTableWidget, QTableWidgetItem,
+                               QAbstractItemView,
                                QStyledItemDelegate)
-from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
+from PySide2.QtMultimedia import QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
 
