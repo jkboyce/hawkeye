@@ -1,4 +1,4 @@
-# HEStart.py
+# Hawkeye.py
 #
 # Hawkeye application main entry point.
 #
@@ -11,8 +11,6 @@ from HEMainWindow import HEMainWindow
 
 
 if __name__ == '__main__':
-    profile = False
-
     app = QApplication(sys.argv)
 
     # manage our own application quit so we can properly shut
