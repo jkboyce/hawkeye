@@ -21,9 +21,9 @@ from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel,
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
-from Hawkeye.HEWorker import HEWorker
-from Hawkeye.HEWidgets import (HEVideoView, HEVideoList, HEViewList,
-                               HETableViewDelegate, HEStatsChart)
+from HEWorker import HEWorker
+from HEWidgets import (HEVideoView, HEVideoList, HEViewList,
+                       HETableViewDelegate, HEStatsChart)
 
 
 class HEMainWindow(QMainWindow):

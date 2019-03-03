@@ -14,7 +14,7 @@ from statistics import median, mean
 
 import cv2
 
-from Hawkeye.HETypes import Balltag, Ballarc
+from HETypes import Balltag, Ballarc
 
 
 class HEVideoScanner:

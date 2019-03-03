@@ -13,7 +13,7 @@ import platform
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
-from Hawkeye.HEVideoScanner import HEVideoScanner
+from HEVideoScanner import HEVideoScanner
 
 
 class HEWorker(QObject):
