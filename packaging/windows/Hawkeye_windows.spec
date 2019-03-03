@@ -9,9 +9,9 @@ a = Analysis(['../../Hawkeye.py'],
              pathex=[hawkeye_root],
              binaries=[('ffmpeg.exe', '.')
                       ],
-             datas=[('../../Hawkeye/haarcascade_upperbody.xml', '.'),
-                    ('../../Hawkeye/about_icon.png', '.'),
-                    ('../../Hawkeye/preferences_icon.png', '.')
+             datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
+                    ('../../resources/about_icon.png', './resources'),
+                    ('../../resources/preferences_icon.png', './resources')
              ],
              hiddenimports=[],
              hookspath=[],
@@ -26,10 +26,10 @@ exe = EXE(pyz,
           a.scripts,
           exclude_binaries=True,
           name='Hawkeye',
-          debug=True,
+          debug=False,
           strip=False,
           upx=True,
-          console=True )
+          console=False )
 
 """
 Hawkeye_excludes = [
@@ -108,8 +108,3 @@ coll = COLLECT(exe,
                upx=True,
                name='Hawkeye')
 
-app = BUNDLE(coll,
-             name='Hawkeye.app',
-             icon='Hawkeye.icns',
-             bundle_identifier=None,
-             info_plist={'NSHighResolutionCapable': 'True'})

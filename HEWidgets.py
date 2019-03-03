@@ -10,9 +10,8 @@ from math import log10, floor
 
 from PySide2.QtCore import QSize, Qt, QPoint, QPointF
 from PySide2.QtGui import QPainter, QPainterPath, QPen
-from PySide2.QtWidgets import (QWidget, QGraphicsView,
-                               QGraphicsScene, QListWidget, QListWidgetItem,
-                               QAbstractItemView,
+from PySide2.QtWidgets import (QWidget, QGraphicsView, QGraphicsScene,
+                               QListWidget, QListWidgetItem, QAbstractItemView,
                                QStyledItemDelegate)
 from PySide2.QtMultimedia import QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
@@ -27,7 +26,6 @@ class HEVideoView(QGraphicsView):
         super().__init__(parent=main_window)
         self.setFrameShape(QGraphicsView.NoFrame)
         self.window = main_window
-
         self.videosnappedtoframe = False
 
     def paintEvent(self, e):
@@ -308,7 +306,6 @@ class HEVideoView(QGraphicsView):
         return view_coord.x(), view_coord.y()
 
     def resizeEvent(self, e):
-        # print('resizeEvent at time {}'.format(time.time()))
         if self.window is not None:
             if self.videosnappedtoframe:
                 self.fitInView(self.scene().itemsBoundingRect(),
@@ -337,8 +334,8 @@ class HEVideoView(QGraphicsView):
 
 class HEVideoList(QListWidget):
     """
-    Subclass of standard QListWidget that implements drag-and-drop of files
-    onto the list.
+    Subclass of QListWidget that implements drag-and-drop of files onto the
+    list.
     """
     def __init__(self, main_window):
         super().__init__(parent=main_window)
