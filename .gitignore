@@ -5,3 +5,5 @@ admin/
 movies/
 packaging/osx/build/
 packaging/osx/dist/
+packaging/windows/build/
+packaging/windows/dist/
