@@ -13,7 +13,7 @@ import platform
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
-from HEVideoScanner import HEVideoScanner
+from HEVideoScanner import HEVideoScanner, HEScanException
 
 
 class HEWorker(QObject):
@@ -21,6 +21,11 @@ class HEWorker(QObject):
     Worker that wakes up periodically and processes any videos that have not
     been done yet. We do this in a separate thread from the main event loop
     since it's a time-consuming operation.
+
+    Processing consists of two parts:
+    1. Scanning the video file to analyze the juggling and produce the
+       `notes` dictionary
+    2. Transcoding the video into a format that supports smooth cueing
 
     This derives from QObject in order to emit signals and connect slots to
     other signals. The signal/slot mechanism is a thread-safe way to
@@ -115,7 +120,7 @@ class HEWorker(QObject):
             del self._queue[0]
             self.sig_done.emit(file_id, notes, fileinfo, resolution)
 
-        self.sig_quit.emit()
+        self.sig_quit.emit()    # signals quit to QApplication
 
     def make_product_fileinfo(self, file_id):
         """
@@ -219,6 +224,11 @@ class HEWorker(QObject):
             scanner.process(writenotes=True, notesdir=hawkeye_dir,
                             callback=processing_callback, verbosity=2)
             notes = scanner.notes
+        except HEScanException as err:
+            self.sig_output.emit(file_id,
+                                 '\n####### Error during scanning #######\n')
+            self.sig_output.emit(file_id,
+                                 "Error message: {}\n\n\n".format(err))
         except HEAbortException:
             # worker thread got an abort signal during processing
             pass
@@ -246,7 +256,7 @@ class HEWorker(QObject):
         hawkeye_dir = fileinfo['hawkeye_dir']
         file_basename_noext = fileinfo['file_basename_noext']
 
-        displayvid_resolution = self._resolution if (
+        displayvid_resolution = self._resolution if (notes is not None and
                 self._resolution < notes['frame_height']) else 0
 
         if displayvid_resolution == 0:
@@ -322,11 +332,11 @@ class HEWorker(QObject):
             if platform.system() == 'Windows':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        '..\\packaging\\windows')
+                        'packaging\\windows')
             elif platform.system() == 'Darwin':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        '../packaging/osx')
+                        'packaging/osx')
             elif platform.system() == 'Linux':
                 ffmpeg_dir = '/usr/local/bin'   # fill this in JKB
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')

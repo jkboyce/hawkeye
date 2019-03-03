@@ -1,6 +1,6 @@
 # HEVideoScanner.py
 #
-# Python class to extract features from a juggling video.
+# Class to extract features from a juggling video.
 #
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
@@ -19,9 +19,9 @@ from HETypes import Balltag, Ballarc
 
 class HEVideoScanner:
     """
-    Python class that uses OpenCV to process juggling video, determining ball
+    This class uses OpenCV to process juggling video, determining ball
     movements, juggler positions, and other high-level features. A typical use
-    of this would be something like:
+    of this is something like:
 
         scanner = HEVideoScanner('video.mp4')
         scanner.process()
@@ -237,12 +237,12 @@ class HEVideoScanner:
         scanvideo = self.notes['scanvideo']
 
         if self._verbosity >= 1:
-            print('Object detection starting on video {}...'.format(
+            print('Object detection starting on video {}'.format(
                 notes['source']))
         cap = cv2.VideoCapture(notes['source'])
         if not cap.isOpened():
-            print('Error opening video file')
-            exit()      # do something more graceful here! JKB
+            raise HEScanException("Error opening video file {}".format(
+                notes['source']))
 
         if display:
             cv2.namedWindow('Frame')
@@ -262,8 +262,8 @@ class HEVideoScanner:
             cap.release()
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
-                print('Error opening scanner video file')
-                exit()      # ...and here JKB
+                raise HEScanException("Error opening video file {}".format(
+                    notes['source']))
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             if self._verbosity >= 2:
@@ -2666,6 +2666,12 @@ class HEVideoScanner:
         with open(_filepath, 'wb') as handle:
             pickle.dump(notes, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+
+# -----------------------------------------------------------------------------
+
+class HEScanException(Exception):
+    def __init__(self, message=None):
+        super().__init__(message)
 
 # -----------------------------------------------------------------------------
 
