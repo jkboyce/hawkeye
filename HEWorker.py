@@ -217,6 +217,7 @@ class HEWorker(QObject):
             # worker thread got an abort signal during processing
             pass
         finally:
+            sys.stdout.close()
             sys.stdout = sys.__stdout__
 
         self.sig_output.emit(file_id, '\n')
@@ -328,7 +329,7 @@ class HEWorker(QObject):
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')
 
         args = [ffmpeg_executable] + args
-        message = 'Running FFMPEG with arguments:\n{}\n\n'.format(
+        message = 'Running FFmpeg with arguments:\n{}\n\n'.format(
                 ' '.join(args))
         self.sig_output.emit(file_id, message)
 
@@ -345,13 +346,13 @@ class HEWorker(QObject):
                         p.terminate()
                         return 1
 
-            results = f'FFMPEG process ended, return code {p.returncode}\n\n'
+            results = f'FFmpeg process ended, return code {p.returncode}\n\n'
             self.sig_output.emit(file_id, results)
 
             return p.returncode
         except subprocess.SubprocessError as err:
             self.sig_output.emit(
-                file_id, '\n####### Error running FFMPEG #######\n')
+                file_id, '\n####### Error running FFmpeg #######\n')
             self.sig_output.emit(
                 file_id, "Error message: {}\n\n\n".format(err))
         return 1
@@ -373,15 +374,14 @@ class HEWorker(QObject):
 
 class HEOutputHandler(io.StringIO):
     """
-    Simple output handler class to capture printed output and send the text
-    through a callback function instead of printing to the console.
+    Simple output handler we install at sys.stdout to capture printed output
+    and send it through a callback function instead of printing to the console.
     """
     def __init__(self, callback=None):
         super().__init__()
         self._callback = callback
 
     def write(self, s: str):
-        super().write(s)
         if self._callback is not None:
             self._callback(s)
 
