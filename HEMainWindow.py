@@ -38,8 +38,8 @@ class HEMainWindow(QMainWindow):
     # signal that informs the worker of new display preferences
     sig_new_prefs = Signal(dict)
 
-    # signal that tells the worker to initiate application quit
-    sig_worker_quit = Signal()
+    # signal that tells the worker to quit
+    # sig_worker_quit = Signal()
 
     def __init__(self, app):
         super().__init__()
@@ -106,7 +106,9 @@ class HEMainWindow(QMainWindow):
         self.setCentralWidget(splitter)
 
     def makeMenus(self):
-        # menu bar
+        """
+        Make the menu bar for the application.
+        """
         openAction = QAction('&Open', self)
         openAction.setShortcut('Ctrl+O')
         openAction.setStatusTip('Open movie')
@@ -453,16 +455,14 @@ class HEMainWindow(QMainWindow):
 
         self.sig_new_work.connect(worker.on_new_work)
         self.sig_new_prefs.connect(worker.on_new_prefs)
-        self.sig_worker_quit.connect(worker.on_app_quit)
+        # self.sig_worker_quit.connect(worker.on_app_quit)
         worker.sig_progress.connect(self.on_worker_step)
         worker.sig_output.connect(self.on_worker_output)
         worker.sig_error.connect(self.on_worker_error)
         worker.sig_done.connect(self.on_worker_done)
-        worker.sig_quit.connect(thread.quit)
-        worker.sig_quit.connect(self.app.quit)
-        thread.started.connect(worker.work)
 
-        thread.start()
+        thread.start(QThread.LowPriority)   # starts thread's event loop
+
         self.sig_new_prefs.emit(self.prefs)
         self.worker_queue_length = 0
 
@@ -477,11 +477,12 @@ class HEMainWindow(QMainWindow):
             if item is None:
                 continue
             if item._filepath == file_id:
-                item._processing_step = step
-                item._processing_steps_total = stepstotal
-                if self.currentVideoItem is item:
-                    self.progressBar.setValue(step)
-                    self.progressBar.setMaximum(stepstotal)
+                if item._doneprocessing is False:
+                    item._processing_step = step
+                    item._processing_steps_total = stepstotal
+                    if self.currentVideoItem is item:
+                        self.progressBar.setValue(step)
+                        self.progressBar.setMaximum(stepstotal)
                 break
 
     @Slot(str, str)
@@ -494,6 +495,7 @@ class HEMainWindow(QMainWindow):
             if item is None:
                 continue
             if item._filepath == file_id:
+                # continue to take output even if processing is done
                 item._output += output
                 if self.currentVideoItem is item:
                     self.outputWidget.moveCursor(QTextCursor.End)
@@ -504,20 +506,26 @@ class HEMainWindow(QMainWindow):
     @Slot(str, str)
     def on_worker_error(self, file_id: str, errormsg: str):
         """
-        Signaled by worker when there is an error
+        Signaled by worker when there is an error.
+
+        We don't currently do anything with the `errormsg` string so it's
+        assumed the caller has sent any relevant error messages to ordinary
+        output.
         """
         for i in range(0, self.videoList.count()):
             item = self.videoList.item(i)
             if item is None:
                 continue
             if item._filepath == file_id:
-                self.worker_queue_length -= 1
-                item._notes = None
-                item._doneprocessing = True
-                item.setForeground(item._foreground)
-                if self.currentVideoItem is item:
-                    self.build_view_list(item)
-                    self.progressBar.hide()
+                if item._doneprocessing is False:
+                    # only do these steps on the first error for the item
+                    self.worker_queue_length -= 1
+                    item._notes = None
+                    item._doneprocessing = True
+                    item.setForeground(item._foreground)
+                    if self.currentVideoItem is item:
+                        self.build_view_list(item)
+                        self.progressBar.hide()
                 break
 
     @Slot(str, dict, dict, int)
@@ -531,38 +539,41 @@ class HEMainWindow(QMainWindow):
             if item is None:
                 continue
             if item._filepath == file_id:
-                self.worker_queue_length -= 1
-                item._videopath = fileinfo['displayvid_path']
-                item._videoresolution = resolution
-                item._csvpath = fileinfo['csvfile_path']
-                item._notes = notes
-                item._doneprocessing = True
-                # see note in HEVideoList.addVideo():
-                item._graphicsvideoitem = QGraphicsVideoItem()
-                item._graphicsscene = QGraphicsScene(self.view)
-                item._graphicsscene.addItem(item._graphicsvideoitem)
-                item._graphicsvideoitem.nativeSizeChanged.connect(
-                        self.videoNativeSizeChanged)
-                item.setForeground(item._foreground)
+                if item._doneprocessing is False:
+                    # only do these steps once, and only if there was not
+                    # previously an error
+                    self.worker_queue_length -= 1
+                    item._videopath = fileinfo['displayvid_path']
+                    item._videoresolution = resolution
+                    item._csvpath = fileinfo['csvfile_path']
+                    item._notes = notes
+                    item._doneprocessing = True
+                    # see note in HEVideoList.addVideo():
+                    item._graphicsvideoitem = QGraphicsVideoItem()
+                    item._graphicsscene = QGraphicsScene(self.view)
+                    item._graphicsscene.addItem(item._graphicsvideoitem)
+                    item._graphicsvideoitem.nativeSizeChanged.connect(
+                            self.videoNativeSizeChanged)
+                    item.setForeground(item._foreground)
 
-                if item is self.currentVideoItem:
-                    wantpaused = True
-                    if self.views_stackedWidget.currentIndex() == 0:
-                        # movie is currently being viewed, retain current pause
-                        # state
-                        wantpaused = (self.mediaPlayer.state() !=
-                                      QMediaPlayer.PlayingState)
+                    if item is self.currentVideoItem:
+                        wantpaused = True
+                        if self.views_stackedWidget.currentIndex() == 0:
+                            # movie is currently being viewed, retain current
+                            # pause state
+                            wantpaused = (self.mediaPlayer.state() !=
+                                          QMediaPlayer.PlayingState)
 
-                    self.syncPlayer()
-                    # time.sleep(0.5)
-                    self.mediaPlayer.setPosition(
-                            self.currentVideoItem._position)
-                    if wantpaused:
-                        self.pauseMovie()
+                        self.syncPlayer()
+                        # time.sleep(0.5)
+                        self.mediaPlayer.setPosition(
+                                self.currentVideoItem._position)
+                        if wantpaused:
+                            self.pauseMovie()
 
-                    self.build_view_list(item)
-                    self.progressBar.hide()
-                    self.views_stackedWidget.setCurrentIndex(0)
+                        self.build_view_list(item)
+                        self.progressBar.hide()
+                        self.views_stackedWidget.setCurrentIndex(0)
 
                 break
 
@@ -917,6 +928,8 @@ class HEMainWindow(QMainWindow):
         This is called whenever the currently-viewed movie changes. It syncs
         the media player to the new video file and adjusts other UI elements
         as needed.
+
+        This leaves the player in a playing state.
         """
         if self.currentVideoItem is None:
             return
@@ -925,6 +938,9 @@ class HEMainWindow(QMainWindow):
             # no converted video yet: default to original video file
             videopath = self.currentVideoItem._filepath
         # print('syncing player to video file {}'.format(videopath))
+
+        self.playForwardUntil = None
+        self.playBackwardUntil = None
 
         self.item = self.currentVideoItem._graphicsvideoitem
         self.scene = self.currentVideoItem._graphicsscene
@@ -946,11 +962,12 @@ class HEMainWindow(QMainWindow):
         """
         Called when the user selects Quit in the menu, or clicks the close
         box in the window's corner.
-
-        All we do is tell the worker thread to abort: It will clean up and do
-        the actual quit.
         """
-        self.sig_worker_quit.emit()
+        # self.sig_worker_quit.emit()
+        self._thread.requestInterruption()
+        self._thread.quit()             # stop thread's event loop
+        self._thread.wait(5000)         # wait up to five seconds to stop
+        self.app.quit()
 
     @Slot()
     def togglePlay(self):

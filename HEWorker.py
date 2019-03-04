@@ -18,19 +18,17 @@ from HEVideoScanner import HEVideoScanner, HEScanException
 
 class HEWorker(QObject):
     """
-    Worker that wakes up periodically and processes any videos that have not
-    been done yet. We do this in a separate thread from the main event loop
-    since it's a time-consuming operation.
+    Worker that processes videos. Processing consists of two parts:
 
-    Processing consists of two parts:
     1. Scanning the video file to analyze the juggling and produce the
        `notes` dictionary
     2. Transcoding the video into a format that supports smooth cueing
 
-    This derives from QObject in order to emit signals and connect slots to
-    other signals. The signal/slot mechanism is a thread-safe way to
-    communicate in Qt. Look in HEMainWindow.startWorker() to see how this
-    thread is initiated and signals and slots connected.
+    We put it in a separate QObject and use signals and slots to communicate
+    with it, so that we can do these time-consuming operations on a thread
+    separate from the main event loop. The signal/slot mechanism is a thread-
+    safe way to communicate in Qt. Look in HEMainWindow.startWorker() to see
+    how this thread is initiated and signals and slots connected.
     """
 
     # progress indicator signal for work-in-process
@@ -56,71 +54,60 @@ class HEWorker(QObject):
     #    arg4(int) = resolution (vertical pixels) of converted video
     sig_done = Signal(str, dict, dict, int)
 
-    # signal that the app should quit
-    sig_quit = Signal()
-
     def __init__(self, app=None):
         super().__init__()
         self._app = app
+        self._resolution = 0
+        self._abort = False
+
+    def abort(self):
+        """
+        Check if the user is trying to quit the app, and if so return True.
+        """
+        if self._abort:
+            return True
+        self._abort = QThread.currentThread().isInterruptionRequested()
+        return self._abort
 
     @Slot()
-    def work(self):
+    def on_new_work(self, file_id: str):
         """
-        Worker thread entry point. Periodically wake up and look for videos
-        to process.
+        Signaled when the worker should process a video.
         """
-        QThread.currentThread().setPriority(QThread.LowPriority)
-        self._abort = False
-        self._resolution = 0
-        self._queue = list()
+        fileinfo = self.make_product_fileinfo(file_id)
+        file_path = fileinfo['file_path']
 
-        while not self._abort:
-            if self._app is not None:
-                # important so this thread can receive signals:
-                self._app.processEvents()
+        errorstring = ''
+        if not os.path.exists(file_path):
+            errorstring = f'File {file_path} does not exist'
+        elif not os.path.isfile(file_path):
+            errorstring = f'File {file_path} is not a file'
+        if errorstring != '':
+            self.sig_error.emit(file_id, errorstring)
+            return
 
-            if len(self._queue) == 0:
-                time.sleep(0.1)
-                continue
-
-            # we have a video in our queue -> start processing
-            file_id = self._queue[0]
-            fileinfo = self.make_product_fileinfo(file_id)
-            file_path = fileinfo['file_path']
-
-            errorstring = ''
-            if not os.path.exists(file_path):
-                errorstring = f'File {file_path} does not exist'
-            elif not os.path.isfile(file_path):
-                errorstring = f'File {file_path} is not a file'
-            if errorstring != '':
-                self.sig_error.emit(file_id, errorstring)
-                del self._queue[0]
-                continue
-
-            # check if the target subdirectory exists, and if not create it
-            hawkeye_dir = fileinfo['hawkeye_dir']
+        # check if the target subdirectory exists, and if not create it
+        hawkeye_dir = fileinfo['hawkeye_dir']
+        if not os.path.exists(hawkeye_dir):
+            os.makedirs(hawkeye_dir)
             if not os.path.exists(hawkeye_dir):
-                os.makedirs(hawkeye_dir)
-                if not os.path.exists(hawkeye_dir):
-                    self.sig_error.emit(file_id,
-                                        'Error creating directory {}'.format(
-                                            hawkeye_dir))
-                    del self._queue[0]
-                    continue
+                self.sig_error.emit(
+                        file_id, f'Error creating directory {hawkeye_dir}')
+                return
 
+        # if not self._abort:
+        if not self.abort():
             notes = self.make_video_notes(fileinfo)
-            if self._abort:
-                continue
 
+        # if not self._abort:
+        if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
-            if self._abort:
-                continue
 
-            del self._queue[0]
+        if self.abort():
+            QThread.currentThread().quit()
+        else:
+            # send the work products back to the main thread
             self.sig_done.emit(file_id, notes, fileinfo, resolution)
-
-        self.sig_quit.emit()    # signals quit to QApplication
 
     def make_product_fileinfo(self, file_id):
         """
@@ -187,11 +174,14 @@ class HEWorker(QObject):
                     '-an', scanvid_path]
             retcode = self.run_ffmpeg(args, file_id)
 
-            if retcode != 0 or self._abort:
+            if retcode != 0 or self.abort():
                 try:
                     os.remove(scanvid_path)
                 except FileNotFoundError:
                     pass
+
+        if self.abort():
+            return None
 
         # if conversion failed, default to original video for scanning step
         if not os.path.isfile(scanvid_path):
@@ -209,11 +199,14 @@ class HEWorker(QObject):
         def processing_callback(step=0, maxsteps=0):
             # so UI thread can update progress bar:
             self.sig_progress.emit(file_id, step, maxsteps)
+            """
             if self._app is not None:
                 # important so we process abort signals to this thread during
                 # processing:
                 self._app.processEvents()
-            if self._abort:
+            """
+            # if self._abort:
+            if self.abort():
                 # raise exception to bail us out of whereever we are in
                 # processing:
                 raise HEAbortException()
@@ -232,9 +225,10 @@ class HEWorker(QObject):
         except HEAbortException:
             # worker thread got an abort signal during processing
             pass
-        sys.stdout = sys.__stdout__
-        self.sig_output.emit(file_id, '\n')
+        finally:
+            sys.stdout = sys.__stdout__
 
+        self.sig_output.emit(file_id, '\n')
         return notes
 
     def make_display_video(self, fileinfo, notes):
@@ -296,12 +290,12 @@ class HEWorker(QObject):
 
         retcode = self.run_ffmpeg(args, file_id)
 
-        if retcode != 0 or self._abort:
+        if retcode != 0 or self.abort():
             try:
                 os.remove(displayvid_path)
             except FileNotFoundError:
                 pass
-            if not self._abort:
+            if not self.abort():
                 self.sig_output.emit(
                         file_id, '\nError converting video {}'.format(
                                      fileinfo['file_basename']))
@@ -347,30 +341,33 @@ class HEWorker(QObject):
                 ' '.join(args))
         self.sig_output.emit(file_id, message)
 
-        p = subprocess.Popen(args, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT)
-        outputhandler = io.TextIOWrapper(p.stdout, encoding='utf-8')
-        while p.poll() is None:
-            time.sleep(0.1)
-            for line in outputhandler:
-                self.sig_output.emit(file_id, line)
-            if self._app is not None:
-                self._app.processEvents()
-            if self._abort:
-                p.terminate()
-                break
+        try:
+            p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+            outputhandler = io.TextIOWrapper(p.stdout, encoding='utf-8')
 
-        results = f'Process ended, return code {p.returncode}\n\n'
-        self.sig_output.emit(file_id, results)
+            while p.poll() is None:
+                time.sleep(0.1)
+                for line in outputhandler:
+                    self.sig_output.emit(file_id, line)
+                    """
+                    if self._app is not None:
+                        self._app.processEvents()
+                    """
+                    if self.abort():
+                        p.terminate()
+                        return 1
 
-        return p.returncode
+            results = f'FFMPEG process ended, return code {p.returncode}\n\n'
+            self.sig_output.emit(file_id, results)
 
-    @Slot(str)
-    def on_new_work(self, file_id: str):
-        """
-        This slot gets signaled when there is a new video to process.
-        """
-        self._queue.append(file_id)
+            return p.returncode
+        except subprocess.SubprocessError as err:
+            self.sig_output.emit(
+                file_id, '\n####### Error running FFMPEG #######\n')
+            self.sig_output.emit(
+                file_id, "Error message: {}\n\n\n".format(err))
+        return 1
 
     @Slot(dict)
     def on_new_prefs(self, prefs: dict):
@@ -390,6 +387,7 @@ class HEWorker(QObject):
         This slot gets signaled when the user wants to quit the app.
         """
         self._abort = True
+        print("worker: got abort signal")
 
 # -----------------------------------------------------------------------------
 
