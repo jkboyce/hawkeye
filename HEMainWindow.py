@@ -38,9 +38,6 @@ class HEMainWindow(QMainWindow):
     # signal that informs the worker of new display preferences
     sig_new_prefs = Signal(dict)
 
-    # signal that tells the worker to quit
-    # sig_worker_quit = Signal()
-
     def __init__(self, app):
         super().__init__()
         self.app = app
@@ -70,6 +67,10 @@ class HEMainWindow(QMainWindow):
         self.playBackwardUntil = None
 
         self.startWorker()
+
+    # -------------------------------------------------------------------------
+    #  User interface creation
+    # -------------------------------------------------------------------------
 
     def makeUI(self):
         """
@@ -441,6 +442,10 @@ class HEMainWindow(QMainWindow):
         about_widget.setLayout(about_layout)
         return about_widget
 
+    # -------------------------------------------------------------------------
+    #  Worker thread
+    # -------------------------------------------------------------------------
+
     def startWorker(self):
         """
         Starts up worker object on a separate thread, to handle the
@@ -455,7 +460,6 @@ class HEMainWindow(QMainWindow):
 
         self.sig_new_work.connect(worker.on_new_work)
         self.sig_new_prefs.connect(worker.on_new_prefs)
-        # self.sig_worker_quit.connect(worker.on_app_quit)
         worker.sig_progress.connect(self.on_worker_step)
         worker.sig_output.connect(self.on_worker_output)
         worker.sig_error.connect(self.on_worker_error)
@@ -566,8 +570,7 @@ class HEMainWindow(QMainWindow):
 
                         self.syncPlayer()
                         # time.sleep(0.5)
-                        self.mediaPlayer.setPosition(
-                                self.currentVideoItem._position)
+                        self.mediaPlayer.setPosition(item._position)
                         if wantpaused:
                             self.pauseMovie()
 
@@ -576,6 +579,10 @@ class HEMainWindow(QMainWindow):
                         self.views_stackedWidget.setCurrentIndex(0)
 
                 break
+
+    # -------------------------------------------------------------------------
+    #  UI interactions
+    # -------------------------------------------------------------------------
 
     @Slot()
     def on_video_selected(self):
@@ -907,104 +914,6 @@ class HEMainWindow(QMainWindow):
             with open(filepath, 'w') as f:
                 f.write(output)
 
-    def closeEvent(self, e):
-        """
-        Called when the user clicks the close icon in the window corner.
-        This overrides QMainWindow.closeEvent()
-        """
-        self.exitCall()
-
-    def openFile(self):
-        filename, _ = QFileDialog.getOpenFileName(self, 'Open Video',
-                                                  QDir.homePath())
-        if filename != '':
-            filepath = os.path.abspath(filename)
-            lastitem = self.videoList.addVideo(filepath)
-            if lastitem is not None:
-                lastitem.setSelected(True)
-
-    def syncPlayer(self):
-        """
-        This is called whenever the currently-viewed movie changes. It syncs
-        the media player to the new video file and adjusts other UI elements
-        as needed.
-
-        This leaves the player in a playing state.
-        """
-        if self.currentVideoItem is None:
-            return
-        videopath = self.currentVideoItem._videopath
-        if videopath is None:
-            # no converted video yet: default to original video file
-            videopath = self.currentVideoItem._filepath
-        # print('syncing player to video file {}'.format(videopath))
-
-        self.playForwardUntil = None
-        self.playBackwardUntil = None
-
-        self.item = self.currentVideoItem._graphicsvideoitem
-        self.scene = self.currentVideoItem._graphicsscene
-        self.view.setScene(self.scene)
-        self.mediaPlayer.setVideoOutput(self.item)
-
-        self.mediaPlayer.pause()
-        self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(videopath)))
-        self.mediaPlayer.play()
-
-        self.playButton.setEnabled(True)
-        self.backButton.setEnabled(False)
-        self.forwardButton.setEnabled(False)
-
-        self.playerErrorLabel.setText('')
-
-    @Slot()
-    def exitCall(self):
-        """
-        Called when the user selects Quit in the menu, or clicks the close
-        box in the window's corner.
-        """
-        # self.sig_worker_quit.emit()
-        self._thread.requestInterruption()
-        self._thread.quit()             # stop thread's event loop
-        self._thread.wait(5000)         # wait up to five seconds to stop
-        self.app.quit()
-
-    @Slot()
-    def togglePlay(self):
-        """
-        Called when the user clicks the play/pause button in the UI.
-        """
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.pauseMovie()
-        else:
-            self.playMovie()
-
-    def pauseMovie(self):
-        """
-        Utility function to pause the movie if it's playing. Be careful to stop
-        on a clean frame boundary, otherwise HEVideoView.paintEvent() can get
-        off-by-one errors in the frame # when drawing overlays on top of the
-        paused video.
-        """
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.mediaPlayer.pause()
-            if self.currentVideoItem._notes is not None:
-                position = self.mediaPlayer.position()
-                framenum = self.framenumForPosition(position)
-                self.setFramenum(framenum)
-                # can't step frame-by-frame if we don't know fps
-                self.backButton.setEnabled(True)
-                self.forwardButton.setEnabled(True)
-
-    def playMovie(self):
-        """
-        Utility function to un-pause the video.
-        """
-        if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
-            self.mediaPlayer.play()
-            self.backButton.setEnabled(False)
-            self.forwardButton.setEnabled(False)
-
     @Slot()
     def showPrefs(self):
         """
@@ -1108,25 +1017,6 @@ class HEMainWindow(QMainWindow):
                 self.view.videosnappedtoframe = True
                 self.view.setDragMode(QGraphicsView.NoDrag)
 
-    def framenum(self):
-        if self.currentVideoItem._notes is None:
-            return None
-        pos = self.mediaPlayer.position()
-        framenum = floor(pos * self.currentVideoItem._notes['fps'] / 1000)
-        return framenum
-
-    def setFramenum(self, framenum):
-        if self.currentVideoItem._notes is None:
-            return
-        fps = self.currentVideoItem._notes['fps']
-        newpos = ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)
-        self.mediaPlayer.setPosition(newpos)
-
-    def framenumForPosition(self, position):
-        if self.currentVideoItem._notes is None:
-            return None
-        return floor(position * self.currentVideoItem._notes['fps'] / 1000)
-
     @Slot()
     def stepBack(self):
         """
@@ -1149,6 +1039,154 @@ class HEMainWindow(QMainWindow):
         newframenum = self.framenum() + 1
         self.setFramenum(newframenum)
 
+    @Slot(int)
+    def on_rate_change(self, index: int):
+        """
+        Called when the user selects a playback rate on the dropdown menu.
+        """
+        self.mediaPlayer.setPlaybackRate(float(
+                    self.playbackRate.currentText()))
+
+    @Slot()
+    def openFile(self):
+        """
+        Called when the user chooses 'Open Video' from the File menu.
+        """
+        filename, _ = QFileDialog.getOpenFileName(self, 'Open Video',
+                                                  QDir.homePath())
+        if filename != '':
+            filepath = os.path.abspath(filename)
+            lastitem = self.videoList.addVideo(filepath)
+            if lastitem is not None:
+                lastitem.setSelected(True)
+
+    @Slot()
+    def togglePlay(self):
+        """
+        Called when the user clicks the play/pause button in the UI.
+        """
+        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
+            self.pauseMovie()
+        else:
+            self.playMovie()
+
+    @Slot(int)
+    def setPosition(self, position):
+        """
+        Called when user interacts with the position slider.
+
+        This is NOT called when the position slider changes as a result of
+        playing the movie. See positionChanged().
+        """
+        if self.currentVideoItem._notes is not None:
+            framenum = self.framenumForPosition(position)
+            self.setFramenum(framenum)
+        else:
+            self.mediaPlayer.setPosition(position)
+
+    @Slot()
+    def exitCall(self):
+        """
+        Called when the user selects Quit in the menu, or clicks the close
+        box in the window's corner. This does a clean exit of the application.
+        """
+        self._thread.requestInterruption()
+        self._thread.quit()             # stop worker thread's event loop
+        self._thread.wait(5000)         # wait up to five seconds to stop
+        self.app.quit()
+
+    # -------------------------------------------------------------------------
+    #  Media player
+    # -------------------------------------------------------------------------
+
+    def syncPlayer(self):
+        """
+        We call this whenever the currently-viewed movie changes. It syncs
+        the media player to the new video file and adjusts other UI elements
+        as needed.
+
+        This leaves the player in a playing state.
+        """
+        if self.currentVideoItem is None:
+            return
+        videopath = self.currentVideoItem._videopath
+        if videopath is None:
+            # no converted video yet: default to original video file
+            videopath = self.currentVideoItem._filepath
+        # print('syncing player to video file {}'.format(videopath))
+
+        self.playForwardUntil = None
+        self.playBackwardUntil = None
+
+        self.item = self.currentVideoItem._graphicsvideoitem
+        self.scene = self.currentVideoItem._graphicsscene
+        self.view.setScene(self.scene)
+        self.mediaPlayer.setVideoOutput(self.item)
+
+        self.mediaPlayer.pause()
+        self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(videopath)))
+        self.mediaPlayer.play()
+
+        self.playButton.setEnabled(True)
+        self.backButton.setEnabled(False)
+        self.forwardButton.setEnabled(False)
+
+        self.playerErrorLabel.setText('')
+
+    def framenum(self):
+        """
+        Returns the frame number (int) currently visible in the player
+        """
+        if self.currentVideoItem._notes is None:
+            return None
+        pos = self.mediaPlayer.position()
+        framenum = floor(pos * self.currentVideoItem._notes['fps'] / 1000)
+        return framenum
+
+    def setFramenum(self, framenum):
+        """
+        Sets the frame number in the player.
+        """
+        if self.currentVideoItem._notes is None:
+            return
+        fps = self.currentVideoItem._notes['fps']
+        newpos = ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)
+        self.mediaPlayer.setPosition(newpos)
+
+    def framenumForPosition(self, position):
+        """
+        Converts from position (milliseconds) to frame number.
+        """
+        if self.currentVideoItem._notes is None:
+            return None
+        return floor(position * self.currentVideoItem._notes['fps'] / 1000)
+
+    def pauseMovie(self):
+        """
+        Utility function to pause the movie if it's playing. It is careful to
+        stop on a clean frame boundary, otherwise HEVideoView.paintEvent() can
+        get off-by-one errors in the frame # when drawing overlays on top of
+        the paused video.
+        """
+        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
+            self.mediaPlayer.pause()
+            if self.currentVideoItem._notes is not None:
+                position = self.mediaPlayer.position()
+                framenum = self.framenumForPosition(position)
+                self.setFramenum(framenum)
+                # can't step frame-by-frame if we don't know fps
+                self.backButton.setEnabled(True)
+                self.forwardButton.setEnabled(True)
+
+    def playMovie(self):
+        """
+        Utility function to un-pause the video.
+        """
+        if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
+            self.mediaPlayer.play()
+            self.backButton.setEnabled(False)
+            self.forwardButton.setEnabled(False)
+
     def mediaStateChanged(self, state):
         """
         Signaled by the QMediaPlayer when the state of the media changes from
@@ -1166,30 +1204,7 @@ class HEMainWindow(QMainWindow):
             self.playButton.setIcon(
                     self.style().standardIcon(QStyle.SP_MediaPlay))
 
-    def videoNativeSizeChanged(self, size):
-        """
-        Signaled by the QMediaPlayer when the video size changes.
-        """
-        self.item.setSize(size)
-        self.view.fitInView(self.item.boundingRect(), Qt.KeepAspectRatio)
-
-        self.zoomInButton.setEnabled(True)
-        self.zoomOutButton.setEnabled(False)
-        self.view.videosnappedtoframe = True
-
-    def setPosition(self, position):
-        """
-        Signaled when user interacts with the position slider.
-
-        This is NOT called when the position slider moves as a result of
-        playing the movie. See positionChanged().
-        """
-        if self.currentVideoItem._notes is not None:
-            framenum = self.framenumForPosition(position)
-            self.setFramenum(framenum)
-        else:
-            self.mediaPlayer.setPosition(position)
-
+    @Slot(int)
     def positionChanged(self, position):
         """
         Signaled by the QMediaPlayer when position in the movie changes.
@@ -1211,13 +1226,16 @@ class HEMainWindow(QMainWindow):
             if self.currentVideoItem is not None:
                 self.currentVideoItem._duration = duration
 
-    @Slot(int)
-    def on_rate_change(self, index: int):
+    def videoNativeSizeChanged(self, size):
         """
-        Called when the user selects a playback rate on the dropdown menu.
+        Signaled by the QMediaPlayer when the video size changes.
         """
-        self.mediaPlayer.setPlaybackRate(float(
-                    self.playbackRate.currentText()))
+        self.item.setSize(size)
+        self.view.fitInView(self.item.boundingRect(), Qt.KeepAspectRatio)
+
+        self.zoomInButton.setEnabled(True)
+        self.zoomOutButton.setEnabled(False)
+        self.view.videosnappedtoframe = True
 
     @Slot()
     def handlePlayerError(self):
@@ -1235,10 +1253,12 @@ class HEMainWindow(QMainWindow):
                                                                    status))
         """
 
+    # -------------------------------------------------------------------------
+    #  QMainWindow overrides
+    # -------------------------------------------------------------------------
+
     def keyPressEvent(self, e):
         """
-        Overrides QMainWindow.keyPressEvent()
-
         We have to work around the fact that neither Qt nor Python can give
         us the instantaneous state of the keyboard, so we use key repeats to
         give us the desired function of the arrow keys which is to continue
@@ -1359,3 +1379,9 @@ class HEMainWindow(QMainWindow):
 
     def sizeHint(self):
         return QSize(850, 600)
+
+    def closeEvent(self, e):
+        """
+        Called when the user clicks the close icon in the window corner.
+        """
+        self.exitCall()

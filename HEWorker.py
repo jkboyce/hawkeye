@@ -62,14 +62,14 @@ class HEWorker(QObject):
 
     def abort(self):
         """
-        Check if the user is trying to quit the app, and if so return True.
+        Return True if the user is trying to quit the app.
         """
         if self._abort:
             return True
         self._abort = QThread.currentThread().isInterruptionRequested()
         return self._abort
 
-    @Slot()
+    @Slot(str)
     def on_new_work(self, file_id: str):
         """
         Signaled when the worker should process a video.
@@ -95,11 +95,9 @@ class HEWorker(QObject):
                         file_id, f'Error creating directory {hawkeye_dir}')
                 return
 
-        # if not self._abort:
         if not self.abort():
             notes = self.make_video_notes(fileinfo)
 
-        # if not self._abort:
         if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
 
@@ -199,13 +197,6 @@ class HEWorker(QObject):
         def processing_callback(step=0, maxsteps=0):
             # so UI thread can update progress bar:
             self.sig_progress.emit(file_id, step, maxsteps)
-            """
-            if self._app is not None:
-                # important so we process abort signals to this thread during
-                # processing:
-                self._app.processEvents()
-            """
-            # if self._abort:
             if self.abort():
                 # raise exception to bail us out of whereever we are in
                 # processing:
@@ -350,10 +341,6 @@ class HEWorker(QObject):
                 time.sleep(0.1)
                 for line in outputhandler:
                     self.sig_output.emit(file_id, line)
-                    """
-                    if self._app is not None:
-                        self._app.processEvents()
-                    """
                     if self.abort():
                         p.terminate()
                         return 1
@@ -380,14 +367,6 @@ class HEWorker(QObject):
             self._resolution = 0
         else:
             self._resolution = int(prefs['resolution'])
-
-    @Slot()
-    def on_app_quit(self):
-        """
-        This slot gets signaled when the user wants to quit the app.
-        """
-        self._abort = True
-        print("worker: got abort signal")
 
 # -----------------------------------------------------------------------------
 
