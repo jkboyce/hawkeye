@@ -381,32 +381,12 @@ class HEVideoList(QListWidget):
 
         basename = os.path.basename(filepath)
         item = QListWidgetItem(basename)
-        item._filepath = filepath
-        item._notes = None
-        item._videopath = None
-        item._videoresolution = 0
-        item._foreground = item.foreground()
-        item._output = ''
-        item._doneprocessing = False
-        item._position = 0              # in milliseconds
-        item._duration = None           # in milliseconds
-        item._frames = None             # frames number from 0 to frames-1
-        item._processing_step = 0
-        item._processing_steps_total = 0
-        item._has_played = False        # see note in HEMainWindow.playMovie()
-        """
-        QGraphicsVideoItem and QGraphicsScene have scaling problems when
-        the video changes. So we keep a separate per-video instance of each
-        and swap them in when we change videos in the view. See
-        switchPlayerToVideoItem().
-        """
-        item._graphicsvideoitem = QGraphicsVideoItem()
-        item._graphicsscene = QGraphicsScene(self.window.view)
-        item._graphicsscene.addItem(item._graphicsvideoitem)
-        item._graphicsvideoitem.nativeSizeChanged.connect(
-                self.window.videoNativeSizeChanged)
+        item.foreground = item.foreground()
         item.setForeground(Qt.gray)
         item.setFlags(item.flags() | Qt.ItemIsSelectable)
+
+        item.vc = HEVideoContext(self.window, filepath)
+
         self.addItem(item)
 
         self.window.sig_new_work.emit(filepath)
@@ -418,6 +398,119 @@ class HEVideoList(QListWidget):
 
 # -----------------------------------------------------------------------------
 
+class HEVideoContext(QObject):
+    """
+    Class to hold all the data for an individual video. It also has its own
+    instance of QMediaPlayer.
+    """
+    def __init__(self, main_window, filepath):
+        super().__init__(parent=main_window)
+        self.window = main_window
+
+        self.player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        self.player.stateChanged.connect(self.mediaStateChanged)
+        self.player.positionChanged.connect(self.positionChanged)
+        self.player.durationChanged.connect(self.durationChanged)
+        self.player.error.connect(self.handlePlayerError)
+
+        self.graphicsvideoitem = QGraphicsVideoItem()
+        self.graphicsscene = QGraphicsScene(self.window.view)
+        self.graphicsscene.addItem(self.graphicsvideoitem)
+        self.graphicsvideoitem.nativeSizeChanged.connect(
+                self.videoNativeSizeChanged)
+
+        self.player.setVideoOutput(self.graphicsvideoitem)
+
+        self.filepath = filepath
+        self.notes = None
+        self.videopath = None
+        self.videoresolution = 0
+        self.output = ''
+        self.doneprocessing = False
+        self.position = 0              # in milliseconds
+        self.duration = None           # in milliseconds
+        self.frames = None             # frames number from 0 to frames-1
+        self.processing_step = 0
+        self.processing_steps_total = 0
+        self.has_played = False        # see note in HEMainWindow.playMovie()
+
+    def mediaStateChanged(self, state):
+        """
+        Signaled by the QMediaPlayer when the state of the media changes from
+        paused to playing, and vice versa.
+        """
+        """
+        state = self.mediaPlayer.state()
+        print(f'media state changed to: {state}')
+        """
+        if self.isActive():
+            if self.player.state() == QMediaPlayer.PlayingState:
+                self.window.playButton.setIcon(
+                        self.window.style().standardIcon(QStyle.SP_MediaPause))
+            else:
+                self.window.playButton.setIcon(
+                        self.window.style().standardIcon(QStyle.SP_MediaPlay))
+
+    @Slot(int)
+    def positionChanged(self, position):
+        """
+        Signaled by the QMediaPlayer when position in the movie changes.
+
+        We block signals since this is only called by the media player when
+        position changes, not when the user interacts with the slider. We want
+        to update the slider position without causing setPosition() to trigger.
+        """
+        if self.isActive():
+            prev = self.window.positionSlider.blockSignals(True)
+            self.window.positionSlider.setValue(position)
+            self.window.positionSlider.blockSignals(prev)
+
+    def durationChanged(self, duration):
+        """
+        Signaled by the QMediaPlayer when the movie duration changes. The
+        duration is given in milliseconds.
+        """
+        # print('durationChanged() to {}'.format(duration))
+        if duration > 0:
+            self.duration = duration
+
+            if self.isActive():
+                self.window.positionSlider.setRange(0, duration)
+
+    def videoNativeSizeChanged(self, size):
+        """
+        Signaled by the QMediaPlayer when the video size changes.
+        """
+        self.graphicsvideoitem.setSize(size)
+
+        if self.isActive():
+            self.window.view.fitInView(self.graphicsvideoitem.boundingRect(),
+                                       Qt.KeepAspectRatio)
+            self.window.zoomInButton.setEnabled(True)
+            self.window.zoomOutButton.setEnabled(False)
+            self.window.view.videosnappedtoframe = True
+
+    @Slot()
+    def handlePlayerError(self):
+        """
+        Called by the media player when there is an error.
+        """
+        if self.isActive():
+            self.window.playButton.setEnabled(False)
+            err = self.player.errorString()
+            code = self.player.error()
+            self.window.playerErrorLabel.setText(f'Error: {err} (code {code})')
+
+    def isActive(self):
+        """
+        Returns True if this video is currently active in the main window,
+        False otherwise.
+        """
+        return (self.window.currentVideoItem is not None
+                and self.window.currentVideoItem.vc is self)
+
+
+# -----------------------------------------------------------------------------
 
 class HEViewList(QListWidget):
     """
