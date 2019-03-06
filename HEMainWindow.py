@@ -46,8 +46,6 @@ class HEMainWindow(QMainWindow):
 
         self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
         self.mediaPlayer.stateChanged.connect(self.mediaStateChanged)
-        self.mediaPlayer.mediaStatusChanged.connect(self.mediaStatusChanged)
-        self.mediaPlayer.videoAvailableChanged.connect(self.videoAvailableChanged)
         self.mediaPlayer.positionChanged.connect(self.positionChanged)
         self.mediaPlayer.durationChanged.connect(self.durationChanged)
         self.mediaPlayer.error.connect(self.handlePlayerError)
@@ -566,7 +564,7 @@ class HEMainWindow(QMainWindow):
 
                     if item is self.currentVideoItem:
                         self.syncPlayerToVideoItem(item)
-                        self.mediaPlayer.pause()
+                        # self.mediaPlayer.pause()
                         self.buildViewList(item)
                         # self.views_stackedWidget.setCurrentIndex(0)
 
@@ -641,7 +639,7 @@ class HEMainWindow(QMainWindow):
         if newvideoitem._doneprocessing:
             # switch to paused video view
             self.syncPlayerToVideoItem(newvideoitem)
-            self.mediaPlayer.pause()
+            # self.mediaPlayer.pause()
             self.views_stackedWidget.setCurrentIndex(0)
         else:
             # switch to 'scanner output' view
@@ -1168,9 +1166,11 @@ class HEMainWindow(QMainWindow):
         # only seems to work when player is paused:
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(videopath)))
         # self.mediaPlayer.play()
-        # only seems to work when player is playing:
         self.mediaPlayer.setPosition(newvideoitem._position)
-        # self.mediaPlayer.pause()
+
+        # This next line appears to be necessary on OS X for the video to
+        # play properly. Strange behavior:
+        self.mediaPlayer.pause()
 
         self.positionSlider.setRange(0, newvideoitem._duration)
         self.playButton.setEnabled(True)
@@ -1182,13 +1182,8 @@ class HEMainWindow(QMainWindow):
         """
         Returns the frame number (integer) currently visible in the player
         """
-        """
-        if self.currentVideoItem._notes is None:
-            return None
-        """
         pos = self.mediaPlayer.position()
         framenum = framenumForPosition(self.currentVideoItem, pos)
-        # framenum = floor(pos * self.currentVideoItem._notes['fps'] / 1000)
         return framenum
 
     def setFramenum(self, framenum):
@@ -1198,8 +1193,6 @@ class HEMainWindow(QMainWindow):
         # print('got to setFramenum, value = {}'.format(framenum))
         if self.currentVideoItem._notes is None:
             return
-        # fps = self.currentVideoItem._notes['fps']
-        # newpos = ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)
         framenum = min(max(0, framenum), self.currentVideoItem._frames - 1)
         position = positionForFramenum(self.currentVideoItem, framenum)
         self.mediaPlayer.setPosition(position)
@@ -1218,7 +1211,8 @@ class HEMainWindow(QMainWindow):
                 framenum = framenumForPosition(self.currentVideoItem, position)
                 self.setFramenum(framenum)
                 self.backButton.setEnabled(self.currentVideoItem._has_played)
-                self.forwardButton.setEnabled(self.currentVideoItem._has_played)
+                self.forwardButton.setEnabled(
+                        self.currentVideoItem._has_played)
 
     def playMovie(self):
         """
@@ -1251,23 +1245,6 @@ class HEMainWindow(QMainWindow):
         else:
             self.playButton.setIcon(
                     self.style().standardIcon(QStyle.SP_MediaPlay))
-
-    def mediaStatusChanged(self, status):
-        """
-        Signaled by the QMediaPlayer when the status of the media changes.
-        """
-        """
-        status = self.mediaPlayer.mediaStatus()
-        print(f'media status changed to: {status}')
-        """
-        pass
-
-    def videoAvailableChanged(self, avail):
-        """
-        Signaled by the QMediaPlayer when the status of the media changes.
-        """
-        # print(f'video available changed to: {avail}')
-        pass
 
     @Slot(int)
     def positionChanged(self, position):
@@ -1313,12 +1290,6 @@ class HEMainWindow(QMainWindow):
         err = self.mediaPlayer.errorString()
         code = self.mediaPlayer.error()
         self.playerErrorLabel.setText(f'Error: {err} (code {code})')
-        """
-        state = self.mediaPlayer.state()
-        status = self.mediaPlayer.mediaStatus()
-        print('player error, media state = {}, status = {}'.format(state,
-                                                                   status))
-        """
 
     # -------------------------------------------------------------------------
     #  QMainWindow overrides
@@ -1347,7 +1318,7 @@ class HEMainWindow(QMainWindow):
         if key == Qt.Key_Space:
             self.togglePlay()
         elif (key == Qt.Key_Right and notes is not None
-             and self.currentVideoItem._has_played):
+              and self.currentVideoItem._has_played):
             # advance movie by one frame
             self.stepBackwardUntil = None
             if self.stepForwardUntil is None:

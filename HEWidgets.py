@@ -57,11 +57,6 @@ class HEVideoView(QGraphicsView):
         framenum = self.window.framenum()
         frames_total = videoitem._frames
 
-        """
-        print('framenum = {}, framenum_max = {}'.format(framenum,
-                                                        frames_total - 1))
-        """
-
         # the following is a hack to solve the way QMediaPlayer on Windows
         # reports positions within videos, so we don't get an off-by-one error
         if platform.system() == 'Windows':
@@ -81,13 +76,13 @@ class HEVideoView(QGraphicsView):
             self.window.mediaPlayer.pause()
             self.window.setFramenum(frames_total - 1)
             framenum = frames_total - 1
-            self.window.backButton.setEnabled(True)
+            self.window.backButton.setEnabled(videoitem._has_played)
             self.window.forwardButton.setEnabled(False)
         else:
-            paused = (self.window.mediaPlayer.state() !=
-                      QMediaPlayer.PlayingState)
-            self.window.backButton.setEnabled(paused)
-            self.window.forwardButton.setEnabled(paused)
+            can_step = (self.window.mediaPlayer.state() !=
+                        QMediaPlayer.PlayingState and videoitem._has_played)
+            self.window.backButton.setEnabled(can_step)
+            self.window.forwardButton.setEnabled(can_step)
 
         # do bounds clipping on stepping limits, and also check if we've hit
         # the end of a range we're stepping through
@@ -95,25 +90,15 @@ class HEVideoView(QGraphicsView):
             if self.window.stepForwardUntil >= frames_total:
                 self.window.stepForwardUntil = frames_total - 1
             if framenum >= self.window.stepForwardUntil:
-
-                # new lines added:
                 if framenum > self.window.stepForwardUntil:
                     self.window.setFramenum(self.window.stepForwardUntil)
-                # end of new lines
-
-
                 self.window.stepForwardUntil = None
         if self.window.stepBackwardUntil is not None:
             if self.window.stepBackwardUntil < 0:
                 self.window.stepBackwardUntil = 0
             if framenum <= self.window.stepBackwardUntil:
-
-                # new lines added:
                 if framenum < self.window.stepBackwardUntil:
                     self.window.setFramenum(self.window.stepBackwardUntil)
-                # end of new lines
-
-
                 self.window.stepBackwardUntil = None
 
         # keep selected run in viewlist synchronized with position in movie
