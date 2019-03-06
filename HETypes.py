@@ -30,7 +30,7 @@ class Ballarc:
     the Balltag objects assigned to the arc.
     """
     def __init__(self):
-        # assigned in processing steps 2 and 3:
+        # assigned in processing steps 3 and 4:
         self.f_peak = 0.0       # frame number (float) when arc peaks
         self.a = 0.0            # parameters defining parabolic path
         self.b = 0.0            # all positions are in juggler coordinates
@@ -39,7 +39,7 @@ class Ballarc:
         self.tags = set()       # set of attached Balltags
         self.id_ = None         # unique sequentially-assigned identifier
 
-        # assigned in processing step 4:
+        # assigned in processing step 5:
         self.next = None
         self.prev = None
         self.hand_throw = None

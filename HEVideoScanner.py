@@ -27,7 +27,7 @@ class HEVideoScanner:
         notes = scanner.notes
         print('found {} runs in video'.format(notes['runs']))
 
-    Scanning occurs in four distinct steps, and optionally you can specify
+    Scanning occurs in five distinct steps, and optionally you can specify
     which steps to do (default is all), and whether to write results to
     disk after processing.
 
@@ -57,7 +57,9 @@ class HEVideoScanner:
         Positive camera tilt equates to a counterclockwise rotation of the
         juggler in the video.
     notes['frame_count']:
-        count of frames in source video (int)
+        actual count of frames in source video (int)
+    notes['frame_count_estimate']:
+        estimated count of frames in source video, from metadata (int)
     notes['meas'][framenum]:
         list of Balltag objects in frame 'framenum' (list)
     notes['body'][framenum]:
@@ -130,10 +132,10 @@ class HEVideoScanner:
                                         if params is None else params)
         self.notes['step'] = 0
 
-    def process(self, steps=(1, 4), readnotes=False, writenotes=False,
+    def process(self, steps=(1, 5), readnotes=False, writenotes=False,
                 notesdir=None, callback=None, verbosity=0):
         """
-        Process the video. Processing occurs in four distinct steps. The
+        Process the video. Processing occurs in five distinct steps. The
         default is to do all processing steps sequentially, but processing may
         be broken up into multiple calls to this method if desired -- see the
         'steps' argument.
@@ -145,7 +147,7 @@ class HEVideoScanner:
         Args:
             steps((int, int) tuple, optional):
                 Starting and finishing step numbers to execute. Default is
-                (1, 4), or all steps.
+                (1, 5), or all steps.
             readnotes(bool, optional):
                 Should the notes dictionary be read from disk prior to
                 processing.
@@ -185,7 +187,7 @@ class HEVideoScanner:
                 _notesdir = os.path.join(dirname, notesdir)
 
         step_start, step_end = steps
-        if step_start in (2, 3, 4):
+        if step_start in (2, 3, 4, 5):
             if readnotes:
                 _notespath = os.path.join(_notesdir, '{}_notes{}.pkl'.format(
                                           basename_noext, step_start - 1))
@@ -195,17 +197,19 @@ class HEVideoScanner:
 
         for step in range(step_start, step_end + 1):
             if step == 1:
-                self.detect_objects(display=False)
+                self.get_video_metadata()
             elif step == 2:
-                self.build_initial_arcs()
+                self.detect_objects(display=False)
             elif step == 3:
-                self.EM_optimize()
+                self.build_initial_arcs()
             elif step == 4:
+                self.EM_optimize()
+            elif step == 5:
                 self.analyze_juggling()
             self.notes['step'] = step
 
         if writenotes:
-            if step_end in (1, 2, 3):
+            if step_end in (1, 2, 3, 4):
                 _notespath = os.path.join(_notesdir,
                                           '{}_notes{}.pkl'.format(
                                             basename_noext, step_end))
@@ -217,7 +221,44 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Video scanner done')
 
-    # --- Step 1: Extract features from video ---------------------------------
+    # --- Step 1: Get video metadata ------------------------------------------
+
+    def get_video_metadata(self):
+        """
+        Find basic metadata about the video: dimensions, fps, and frame count.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        notes = self.notes
+
+        if self._verbosity >= 1:
+            print('Getting metadata for video {}'.format(notes['source']))
+
+        cap = cv2.VideoCapture(notes['source'])
+        if not cap.isOpened():
+            raise HEScanException("Error opening video file {}".format(
+                notes['source']))
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        framecount = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+
+        notes['fps'] = fps
+        notes['frame_width'] = framewidth
+        notes['frame_height'] = frameheight
+        notes['frame_count_estimate'] = framecount
+
+        if self._verbosity >= 2:
+            print('width = {}, height = {}, fps = {}'.format(
+                framewidth, frameheight, fps))
+            print(f'estimated frame count = {framecount}')
+
+    # --- Step 2: Extract features from video ---------------------------------
 
     def detect_objects(self, display=False):
         """
@@ -233,32 +274,28 @@ class HEVideoScanner:
             None
         """
         notes = self.notes
-        scanvideo = self.notes['scanvideo']
 
         if self._verbosity >= 1:
             print('Object detection starting on video {}'.format(
-                notes['source']))
-        cap = cv2.VideoCapture(notes['source'])
-        if not cap.isOpened():
-            raise HEScanException("Error opening video file {}".format(
                 notes['source']))
 
         if display:
             cv2.namedWindow('Frame')
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        framecount = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if self._verbosity >= 2:
-            print('width = {}, height = {}, fps = {}'.format(
-                framewidth, frameheight, fps))
-            print('estimated frame_count = {}'.format(framecount))
+        fps = notes['fps']
+        framewidth = notes['frame_width']
+        frameheight = notes['frame_height']
+        framecount = notes['frame_count_estimate']
+        scanvideo = notes['scanvideo']
 
-        scan_framewidth, scan_frameheight = framewidth, frameheight
-
-        if scanvideo is not None:
-            cap.release()
+        if scanvideo is None:
+            # no substitute scan video provided
+            cap = cv2.VideoCapture(notes['source'])
+            if not cap.isOpened():
+                raise HEScanException("Error opening video file {}".format(
+                    notes['source']))
+            scan_framewidth, scan_frameheight = framewidth, frameheight
+        else:
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
                 raise HEScanException("Error opening video file {}".format(
@@ -279,9 +316,6 @@ class HEVideoScanner:
             orig_y = scan_y * scan_scaledown
             return orig_x, orig_y
 
-        notes['fps'] = fps
-        notes['frame_width'] = framewidth
-        notes['frame_height'] = frameheight
         notes['camera_tilt'] = 0.0
         notes['scanner_params']['min_tags_per_arc'] = (
                 notes['scanner_params']['min_tags_per_arc_high_fps']
@@ -442,7 +476,7 @@ class HEVideoScanner:
 
         notes['frame_count'] = framenum
         if self._verbosity >= 2:
-            print('actual frame_count = {}'.format(notes['frame_count']))
+            print('actual frame count = {}'.format(notes['frame_count']))
 
         cap.release()
         if display:
@@ -451,7 +485,7 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print(f'Object detection done: {tag_count} detections')
 
-    # --- Step 2: Build initial set of arcs -----------------------------------
+    # --- Step 3: Build initial set of arcs -----------------------------------
 
     def build_initial_arcs(self):
         """
@@ -471,10 +505,14 @@ class HEVideoScanner:
 
         # Scan once to get a small number of arcs, to make a preliminary
         # estimate of gravity
+        if self._verbosity >= 2:
+            print('building trial arcs...')
         arcs = self.construct_arcs(maxcount=5)
         self.find_global_params(arcs)
 
         # Scan again to get all arcs
+        if self._verbosity >= 2:
+            print('building all arcs...')
         arcs = self.construct_arcs()
         self.find_global_params(arcs)
 
@@ -484,8 +522,7 @@ class HEVideoScanner:
         notes['arcs'] = arcs
 
         if self._verbosity >= 1:
-            print('Build initial arcs done: {} arcs created'.format(
-                len(arcs)))
+            print('Build initial arcs done: {} arcs created'.format(len(arcs)))
 
     def construct_arcs(self, maxcount=None):
         """
@@ -503,10 +540,10 @@ class HEVideoScanner:
         """
         notes = self.notes
 
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             print('construct_arcs(): building neighbor lists...')
         self.build_neighbor_lists()
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             print('done')
 
         arclist = []
@@ -612,9 +649,9 @@ class HEVideoScanner:
                         if maxcount is not None and len(arclist) >= maxcount:
                             done_making_arcs = True
 
-                        if self._verbosity >= 2:
+                        if self._verbosity >= 2 and maxcount is not None:
                             print(f'made arc number {len(arclist)}, '
-                                  f'frame_peak = {arc.f_peak:.3f}, '
+                                  f'frame_peak = {arc.f_peak:.1f}, '
                                   f'accel = {arc.e:.3f}')
                     else:
                         for t in arc.tags:
@@ -643,8 +680,7 @@ class HEVideoScanner:
                 for tag in arc.tags:
                     tag.done = True
             print(
-                'construct_arcs() done: {} of {} tags attached '
-                'to {} arcs'.format(
+                'done: {} of {} tags attached to {} arcs'.format(
                     sum(1 for t in tagqueue if t.done is True), len(tagqueue),
                     len(arclist)))
 
@@ -901,10 +937,10 @@ class HEVideoScanner:
             fps = notes['fps']
             notes['cm_per_pixel'] = 980.7 / (g_px_per_frame_sq * fps**2)
             if self._verbosity >= 2:
-                print('g_px/f^2 = {}, cm/px = {}'.format(
+                print('g (pixels/frame^2) = {:.6f}, cm/pixel = {:.6f}'.format(
                     notes['g_px_per_frame_sq'], notes['cm_per_pixel']))
 
-    # --- Step 3: Refine arcs with EM algorithm -------------------------------
+    # --- Step 4: Refine arcs with EM algorithm -------------------------------
 
     def EM_optimize(self):
         """
@@ -951,7 +987,7 @@ class HEVideoScanner:
                 print('estimating camera tilt...')
             self.estimate_camera_tilt(arcs)
             if self._verbosity >= 2:
-                print('camera tilt = {} degrees'.format(
+                print('camera tilt = {:.6f} degrees'.format(
                                 degrees(notes['camera_tilt'])))
 
             if self._verbosity >= 2:
@@ -1425,7 +1461,7 @@ class HEVideoScanner:
                    notes['scanner_params']['max_distance_pixels']
                    for arc in tag.weight)
 
-    # --- Step 4: Analyze juggling patterns -----------------------------------
+    # --- Step 5: Analyze juggling patterns -----------------------------------
 
     def analyze_juggling(self):
         """
@@ -1918,7 +1954,7 @@ class HEVideoScanner:
                           f'set arc {arc_toassign.throw_id} to catch in '
                           f'{arc_toassign.hand_catch}')
 
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             for arc in run:
                 print(f'arc {arc.throw_id} throwing from {arc.hand_throw}, '
                       f'catching in {arc.hand_catch}')
@@ -1932,6 +1968,7 @@ class HEVideoScanner:
         """
         notes = self.notes
         run = run_dict['throw']
+        duration = run_dict['duration']
         tps = run_dict['throws per sec']
         height = notes['cm_per_pixel'] * mean(arc.height for arc in run)
 
@@ -1966,9 +2003,10 @@ class HEVideoScanner:
 
         run_dict['balls'] = N = min(N_round, N_max)
         if self._verbosity >= 2:
-            print(f'tps = {tps:.2f} Hz, H = {height:.1f} cm, '
-                  f'N_est = {N_est:.2f}, N_round = {N_round}, '
-                  f'N_max = {N_max}, N = {N}')
+            print(f'duration = {duration:.1f} sec, tps = {tps:.2f} Hz, '
+                  f'height = {height:.1f} cm')
+            print(f'N_est = {N_est:.2f}, N_round = {N_round}, '
+                  f'N_max = {N_max} --> N = {N}')
 
     def analyze_throw_errors(self, run_dict):
         """
@@ -2388,14 +2426,14 @@ if __name__ == '__main__':
         notes_step = 4
         start_frame = 700
 
-        if 1 <= notes_step <= 4:
+        if 1 <= notes_step <= 5:
             _filepath = os.path.abspath(_filename)
             _dirname = os.path.dirname(_filepath)
             _hawkeye_dir = os.path.join(_dirname, '__Hawkeye__')
             _basename = os.path.basename(_filepath)
             _basename_noext = os.path.splitext(_basename)[0]
 
-            if notes_step == 4:
+            if notes_step == 5:
                 _basename_notes = _basename_noext + '_notes.pkl'
             else:
                 _basename_notes = _basename_noext + '_notes{}.pkl'.format(
@@ -2408,8 +2446,8 @@ if __name__ == '__main__':
         play_video(_filename, notes=mynotes, outfilename=None,
                    startframe=start_frame, keywait=True)
     else:
-        startstep = 4
-        endstep = 4
+        startstep = 5
+        endstep = 5
         verbosity = 2
 
         scanner = HEVideoScanner(_filename, scanvideo=_scanvideo)

@@ -10,6 +10,7 @@ import io
 import time
 import subprocess
 import platform
+import copy
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
@@ -21,10 +22,15 @@ class HEWorker(QObject):
     Worker that processes videos. Processing consists of two parts:
 
     1. Scanning the video file to analyze the juggling and produce the
-       `notes` dictionary
+       `notes` dictionary with object detections, arc parameters, etc.
     2. Transcoding the video into a format that supports smooth cueing
 
-    We put it in a separate QObject and use signals and slots to communicate
+    We break up the scanning into two parts so that we can return a
+    transcoded display video back to the main thread as quickly as possible.
+    That way the user can view the video while the rest of scanning is still
+    underway.
+
+    We put this in a separate QObject and use signals and slots to communicate
     with it, so that we can do these time-consuming operations on a thread
     separate from the main event loop. The signal/slot mechanism is a thread-
     safe way to communicate in Qt. Look in HEMainWindow.startWorker() to see
@@ -47,12 +53,17 @@ class HEWorker(QObject):
     #    arg2(str) = error message
     sig_error = Signal(str, str)
 
-    # signal that processing is done for a video
+    # signal that display video (from FFmpeg transcoding) is done
+    #    arg1(str) = video file_id
+    #    arg2(dict) = fileinfo dictionary with file path names
+    #    arg3(int) = resolution (vertical pixels) of converted video
+    #    arg4(int) = preliminary version of notes dictionary for video
+    sig_video_done = Signal(str, dict, int, dict)
+
+    # signal that notes processing (object detection) is done
     #    arg1(str) = video file_id
     #    arg2(dict) = notes dictionary for video
-    #    arg3(dict) = fileinfo dictionary with file path names
-    #    arg4(int) = resolution (vertical pixels) of converted video
-    sig_done = Signal(str, dict, dict, int)
+    sig_notes_done = Signal(str, dict)
 
     def __init__(self, app=None):
         super().__init__()
@@ -67,6 +78,8 @@ class HEWorker(QObject):
         if self._abort:
             return True
         self._abort = QThread.currentThread().isInterruptionRequested()
+        if self._abort:
+            QThread.currentThread().quit()      # stop thread's event loop
         return self._abort
 
     @Slot(str)
@@ -75,8 +88,9 @@ class HEWorker(QObject):
         Signaled when the worker should process a video.
         """
         fileinfo = self.make_product_fileinfo(file_id)
-        file_path = fileinfo['file_path']
 
+        # check if the file exists and is readable
+        file_path = fileinfo['file_path']
         errorstring = ''
         if not os.path.exists(file_path):
             errorstring = f'File {file_path} does not exist'
@@ -89,23 +103,55 @@ class HEWorker(QObject):
         # check if the target subdirectory exists, and if not create it
         hawkeye_dir = fileinfo['hawkeye_dir']
         if not os.path.exists(hawkeye_dir):
+            self.sig_output.emit(file_id,
+                                 f'Creating directory {hawkeye_dir}\n')
             os.makedirs(hawkeye_dir)
             if not os.path.exists(hawkeye_dir):
+                self.sig_output.emit(
+                        file_id, f'Error creating directory {hawkeye_dir}')
                 self.sig_error.emit(
                         file_id, f'Error creating directory {hawkeye_dir}')
                 return
 
-        if not self.abort():
-            notes = self.make_video_notes(fileinfo)
+        # check if the notes file already exists, and if so load it
+        need_notes = True
+        notes_path = fileinfo['notes_path']
+        if os.path.isfile(notes_path):
+            notes = HEVideoScanner.read_notes(notes_path)
+            if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
+                need_notes = False
+            else:
+                # old version of notes file -> delete and create a new one
+                self.sig_output.emit(file_id, 'Notes file is old...deleting\n')
+                os.remove(notes_path)
+
+        if need_notes and not self.abort():
+            scanvid_path = fileinfo['scanvid_path']
+            scanner = HEVideoScanner(file_path, scanvideo=scanvid_path)
+            notes = scanner.notes
+
+            # do the first step of scanning, which gets the video metadata
+            # we need to make the display video
+            if self.run_scanner(fileinfo, scanner, steps=(1, 1),
+                                writenotes=False) != 0:
+                return
 
         if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
+            self.sig_video_done.emit(file_id, fileinfo, resolution,
+                                     copy.deepcopy(notes))
 
-        if self.abort():
-            QThread.currentThread().quit()
-        else:
-            # send the work products back to the main thread
-            self.sig_done.emit(file_id, notes, fileinfo, resolution)
+        if need_notes and not self.abort():
+            if self.make_scan_video(fileinfo) != 0:
+                return
+
+        if need_notes and not self.abort():
+            if self.run_scanner(fileinfo, scanner, steps=(2, 5),
+                                writenotes=True) != 0:
+                return
+
+        if not self.abort():
+            self.sig_notes_done.emit(file_id, notes)
 
     def make_product_fileinfo(self, file_id):
         """
@@ -138,52 +184,14 @@ class HEWorker(QObject):
         result['csvfile_path'] = csvfile_path
         return result
 
-    def make_video_notes(self, fileinfo):
+    def run_scanner(self, fileinfo, scanner, steps, writenotes):
         """
-        Check if the notes file exists, and if not then create it using
-        the video scanner. Capture stdout and send the output to our UI.
+        Run the video scanner. Capture stdout and send the output to our UI.
+
+        Returns 0 on success, 1 on failure.
         """
         file_id = fileinfo['file_id']
-        file_path = fileinfo['file_path']
         hawkeye_dir = fileinfo['hawkeye_dir']
-        notes_path = fileinfo['notes_path']
-        scanvid_path = fileinfo['scanvid_path']
-
-        if os.path.isfile(notes_path):
-            notes = HEVideoScanner.read_notes(notes_path)
-            if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
-                return notes
-            else:
-                # old version of notes file -> delete it and create a new one
-                os.remove(notes_path)
-                del notes
-
-        """
-        Create a video at 640x480 resolution to use as input for the feature
-        detector. We use a fixed resolution because (a) the feature detector
-        performs well on videos of this scale, and (b) we may want to
-        experiment with a neural network-based feature detector in the future,
-        which would need a fixed input dimension.
-        """
-        if not os.path.isfile(scanvid_path):
-            args = ['-i', file_path, '-c:v', 'libx264', '-crf', '20', '-vf',
-                    'scale=-1:480,crop=min(iw\\,640):480,'
-                    'pad=640:480:(ow-iw)/2:0,setsar=1',
-                    '-an', scanvid_path]
-            retcode = self.run_ffmpeg(args, file_id)
-
-            if retcode != 0 or self.abort():
-                try:
-                    os.remove(scanvid_path)
-                except FileNotFoundError:
-                    pass
-
-        if self.abort():
-            return None
-
-        # if conversion failed, default to original video for scanning step
-        if not os.path.isfile(scanvid_path):
-            scanvid_path = None
 
         # Install our own output handler at sys.stdout to capture printed text
         # from the scanner and send it to our UI thread.
@@ -202,26 +210,26 @@ class HEWorker(QObject):
                 # processing:
                 raise HEAbortException()
 
-        notes = None
         try:
-            scanner = HEVideoScanner(file_path, scanvideo=scanvid_path)
-            scanner.process(writenotes=True, notesdir=hawkeye_dir,
+            scanner.process(steps=steps,
+                            writenotes=writenotes, notesdir=hawkeye_dir,
                             callback=processing_callback, verbosity=2)
-            notes = scanner.notes
         except HEScanException as err:
             self.sig_output.emit(file_id,
                                  '\n####### Error during scanning #######\n')
             self.sig_output.emit(file_id,
                                  "Error message: {}\n\n\n".format(err))
+            self.sig_error.emit(file_id, f'Error: {err}')
+            return 1
         except HEAbortException:
             # worker thread got an abort signal during processing
-            pass
+            return 1
         finally:
             sys.stdout.close()
             sys.stdout = sys.__stdout__
 
         self.sig_output.emit(file_id, '\n')
-        return notes
+        return 0
 
     def make_display_video(self, fileinfo, notes):
         """
@@ -296,6 +304,43 @@ class HEWorker(QObject):
                                      fileinfo['file_basename']))
 
         return displayvid_resolution
+
+    def make_scan_video(self, fileinfo):
+        """
+        Create a video at 640x480 resolution to use as input for the feature
+        detector. We use a fixed resolution because (a) the feature detector
+        performs well on videos of this scale, and (b) we may want to
+        experiment with a neural network-based feature detector in the future,
+        which would need a fixed input dimension.
+
+        Returns 0 on success, 1 on failure.
+        """
+        file_id = fileinfo['file_id']
+        file_path = fileinfo['file_path']
+        scanvid_path = fileinfo['scanvid_path']
+
+        if not os.path.isfile(scanvid_path):
+            args = ['-i', file_path, '-c:v', 'libx264', '-crf', '20', '-vf',
+                    'scale=-1:480,crop=min(iw\\,640):480,'
+                    'pad=640:480:(ow-iw)/2:0,setsar=1',
+                    '-an', scanvid_path]
+            retcode = self.run_ffmpeg(args, file_id)
+
+            if retcode != 0 or self.abort():
+                try:
+                    os.remove(scanvid_path)
+                except FileNotFoundError:
+                    pass
+                if not self.abort():
+                    self.sig_output.emit(
+                            file_id, '\nError converting video {}'.format(
+                                         fileinfo['file_basename']))
+                    self.sig_error.emit(
+                            file_id, 'Error converting video {}'.format(
+                                         fileinfo['file_basename']))
+                return 1
+
+        return 0
 
     def run_ffmpeg(self, args, file_id):
         """
