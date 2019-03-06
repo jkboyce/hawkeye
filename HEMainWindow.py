@@ -630,6 +630,11 @@ class HEMainWindow(QMainWindow):
             return
         newvideoitem = items[0]
 
+        if newvideoitem is not self.currentVideoItem:
+            # see note in playMovie(). Force a re-play whenever we switch
+            # videos, before enabling step forward/backward actions.
+            newvideoitem._has_played = False
+
         self.currentVideoItem = newvideoitem
         self.buildViewList(newvideoitem)
 
@@ -1059,7 +1064,6 @@ class HEMainWindow(QMainWindow):
         """
         if self.currentVideoItem._notes is None:
             return
-        # self.pauseMovie()
         self.mediaPlayer.pause()
         newframenum = self.framenum() - 1
         self.setFramenum(newframenum)
@@ -1071,7 +1075,6 @@ class HEMainWindow(QMainWindow):
         """
         if self.currentVideoItem._notes is None:
             return
-        # self.pauseMovie()
         self.mediaPlayer.pause()
         newframenum = self.framenum() + 1
         self.setFramenum(newframenum)
@@ -1102,6 +1105,8 @@ class HEMainWindow(QMainWindow):
         """
         Called when the user clicks the play/pause button in the UI.
         """
+        self.stepBackwardUntil = self.stepForwardUntil = None
+
         if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
             self.pauseMovie()
         else:
@@ -1142,7 +1147,7 @@ class HEMainWindow(QMainWindow):
         the selected video in the Videos: list) changes. It load the video
         file, cues to position, and adjusts other UI elements as needed.
 
-        This leaves the player in a playing state.
+        This leaves the player in a paused state.
         """
         if newvideoitem is None:
             return
@@ -1160,9 +1165,12 @@ class HEMainWindow(QMainWindow):
         self.mediaPlayer.setVideoOutput(self.item)
 
         self.mediaPlayer.pause()
+        # only seems to work when player is paused:
         self.mediaPlayer.setMedia(QMediaContent(QUrl.fromLocalFile(videopath)))
-        self.mediaPlayer.play()
+        # self.mediaPlayer.play()
+        # only seems to work when player is playing:
         self.mediaPlayer.setPosition(newvideoitem._position)
+        # self.mediaPlayer.pause()
 
         self.positionSlider.setRange(0, newvideoitem._duration)
         self.playButton.setEnabled(True)
@@ -1209,9 +1217,8 @@ class HEMainWindow(QMainWindow):
                 position = self.mediaPlayer.position()
                 framenum = framenumForPosition(self.currentVideoItem, position)
                 self.setFramenum(framenum)
-                # can't step frame-by-frame if we don't know fps
-                self.backButton.setEnabled(True)
-                self.forwardButton.setEnabled(True)
+                self.backButton.setEnabled(self.currentVideoItem._has_played)
+                self.forwardButton.setEnabled(self.currentVideoItem._has_played)
 
     def playMovie(self):
         """
@@ -1221,6 +1228,13 @@ class HEMainWindow(QMainWindow):
             self.mediaPlayer.play()
             self.backButton.setEnabled(False)
             self.forwardButton.setEnabled(False)
+
+            # Mark the video as having been played. This addresses an issue
+            # where the step forward/backward actions don't work correctly
+            # until the video has entered a playing state. (This issue occurs
+            # on both Mac and Windows.)
+            if self.currentVideoItem is not None:
+                self.currentVideoItem._has_played = True
 
     def mediaStateChanged(self, state):
         """
@@ -1332,20 +1346,20 @@ class HEMainWindow(QMainWindow):
 
         if key == Qt.Key_Space:
             self.togglePlay()
-        elif key == Qt.Key_Right and notes is not None:
+        elif (key == Qt.Key_Right and notes is not None
+             and self.currentVideoItem._has_played):
             # advance movie by one frame
             self.stepBackwardUntil = None
             if self.stepForwardUntil is None:
                 # not already playing forward
                 self.stepForwardUntil = framenum + 1
-                #self.mediaPlayer.pause()
+
                 # this next line is necessary on Windows but not Mac OS, due to
                 # differences in the way the video players work (the Mac player
                 # calls paintEvent() continuously even when the player is
                 # paused, while the Windows player does not). Keep it in for
                 # cross-platform compatibility:
-                # self.stepForward()
-                self.playMovie()
+                self.stepForward()
             else:
                 """
                 Set target two frames ahead so that HEVideoView.paintEvent()
@@ -1355,12 +1369,12 @@ class HEMainWindow(QMainWindow):
                 overshooting by one frame.
                 """
                 self.stepForwardUntil = framenum + 2
-        elif key == Qt.Key_Left and notes is not None:
+        elif (key == Qt.Key_Left and notes is not None
+              and self.currentVideoItem._has_played):
             # step back one frame
             self.stepForwardUntil = None
             if self.stepBackwardUntil is None:
                 self.stepBackwardUntil = framenum - 1
-                self.mediaPlayer.pause()
                 self.stepBackward()     # see note above on step forward
             else:
                 self.stepBackwardUntil = framenum - 2
@@ -1380,7 +1394,6 @@ class HEMainWindow(QMainWindow):
                 return
             self.stepForwardUntil = max(round(throwframes[0]), framenum + 1)
             self.stepBackwardUntil = None
-            self.mediaPlayer.pause()
             self.stepForward()          # see note above on step forward
         elif key == Qt.Key_Z and notes is not None:
             # play backward until previous throw in run
@@ -1399,7 +1412,6 @@ class HEMainWindow(QMainWindow):
                 return
             self.stepForwardUntil = None
             self.stepBackwardUntil = min(round(throwframes[0]), framenum - 1)
-            self.mediaPlayer.pause()
             self.stepBackward()         # see note above on step forward
         elif key == Qt.Key_S and notes is not None:
             # go to next run

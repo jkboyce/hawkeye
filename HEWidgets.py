@@ -97,7 +97,6 @@ class HEVideoView(QGraphicsView):
             if framenum >= self.window.stepForwardUntil:
 
                 # new lines added:
-                self.window.mediaPlayer.pause()
                 if framenum > self.window.stepForwardUntil:
                     self.window.setFramenum(self.window.stepForwardUntil)
                 # end of new lines
@@ -110,7 +109,6 @@ class HEVideoView(QGraphicsView):
             if framenum <= self.window.stepBackwardUntil:
 
                 # new lines added:
-                self.window.mediaPlayer.pause()
                 if framenum < self.window.stepBackwardUntil:
                     self.window.setFramenum(self.window.stepBackwardUntil)
                 # end of new lines
@@ -410,6 +408,7 @@ class HEVideoList(QListWidget):
         item._frames = None             # frames number from 0 to frames-1
         item._processing_step = 0
         item._processing_steps_total = 0
+        item._has_played = False        # see note in HEMainWindow.playMovie()
         """
         QGraphicsVideoItem and QGraphicsScene have scaling problems when
         the video changes. So we keep a separate per-video instance of each
