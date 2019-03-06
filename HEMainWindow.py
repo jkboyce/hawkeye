@@ -1338,9 +1338,14 @@ class HEMainWindow(QMainWindow):
             if self.stepForwardUntil is None:
                 # not already playing forward
                 self.stepForwardUntil = framenum + 1
-                # self.pauseMovie()
+                #self.mediaPlayer.pause()
+                # this next line is necessary on Windows but not Mac OS, due to
+                # differences in the way the video players work (the Mac player
+                # calls paintEvent() continuously even when the player is
+                # paused, while the Windows player does not). Keep it in for
+                # cross-platform compatibility:
                 # self.stepForward()
-                self.mediaPlayer.pause()
+                self.playMovie()
             else:
                 """
                 Set target two frames ahead so that HEVideoView.paintEvent()
@@ -1355,14 +1360,13 @@ class HEMainWindow(QMainWindow):
             self.stepForwardUntil = None
             if self.stepBackwardUntil is None:
                 self.stepBackwardUntil = framenum - 1
-                # self.pauseMovie()
-                # self.stepBackward()
                 self.mediaPlayer.pause()
+                self.stepBackward()     # see note above on step forward
             else:
                 self.stepBackwardUntil = framenum - 2
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
-            if notes is None:
+            if notes is None or 'arcs' not in notes or 'run' not in notes:
                 return
             if (viewitem is not None and viewitem._type == 'run'):
                 runindex = viewitem._runindex
@@ -1376,11 +1380,11 @@ class HEMainWindow(QMainWindow):
                 return
             self.stepForwardUntil = max(round(throwframes[0]), framenum + 1)
             self.stepBackwardUntil = None
-            # self.pauseMovie()
-            # self.stepForward()
+            self.mediaPlayer.pause()
+            self.stepForward()          # see note above on step forward
         elif key == Qt.Key_Z and notes is not None:
             # play backward until previous throw in run
-            if notes is None:
+            if notes is None or 'arcs' not in notes or 'run' not in notes:
                 return
             if (self.currentViewItem is not None and
                     self.currentViewItem._type == 'run'):
@@ -1395,8 +1399,8 @@ class HEMainWindow(QMainWindow):
                 return
             self.stepForwardUntil = None
             self.stepBackwardUntil = min(round(throwframes[0]), framenum - 1)
-            # self.pauseMovie()
-            # self.stepBackward()
+            self.mediaPlayer.pause()
+            self.stepBackward()         # see note above on step forward
         elif key == Qt.Key_S and notes is not None:
             # go to next run
             if (viewitem is not None and viewitem._type == 'run'):

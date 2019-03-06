@@ -95,15 +95,27 @@ class HEVideoView(QGraphicsView):
             if self.window.stepForwardUntil >= frames_total:
                 self.window.stepForwardUntil = frames_total - 1
             if framenum >= self.window.stepForwardUntil:
-                # self.window.pauseMovie()
-                # self.window.setFramenum(self.window.stepForwardUntil)
+
+                # new lines added:
+                self.window.mediaPlayer.pause()
+                if framenum > self.window.stepForwardUntil:
+                    self.window.setFramenum(self.window.stepForwardUntil)
+                # end of new lines
+
+
                 self.window.stepForwardUntil = None
         if self.window.stepBackwardUntil is not None:
             if self.window.stepBackwardUntil < 0:
                 self.window.stepBackwardUntil = 0
             if framenum <= self.window.stepBackwardUntil:
-                # self.window.pauseMovie()
-                # self.window.setFramenum(self.window.stepBackwardUntil)
+
+                # new lines added:
+                self.window.mediaPlayer.pause()
+                if framenum < self.window.stepBackwardUntil:
+                    self.window.setFramenum(self.window.stepBackwardUntil)
+                # end of new lines
+
+
                 self.window.stepBackwardUntil = None
 
         # keep selected run in viewlist synchronized with position in movie
