@@ -45,6 +45,7 @@ class HEMainWindow(QMainWindow):
         self.currentViewItem = None
         self.stepForwardUntil = None
         self.stepBackwardUntil = None
+        
         self.prefs = {
             'markers': True,
             'torso': False,
@@ -547,6 +548,7 @@ class HEMainWindow(QMainWindow):
                     item.vc.frames = notes['frame_count_estimate'] - 4
                     item.vc.duration = int(item.vc.frames * 1000
                                            / notes['fps'])
+                    item.vc.position = 0
 
                     item.vc.player.pause()
                     item.vc.player.setMedia(QMediaContent(
@@ -557,6 +559,10 @@ class HEMainWindow(QMainWindow):
                     if item is self.currentVideoItem:
                         self.playButton.setEnabled(True)
                         self.positionSlider.setRange(0, item.vc.duration)
+                        # block signals so we don't trigger setPosition()
+                        prev = self.positionSlider.blockSignals(True)
+                        self.positionSlider.setValue(0)
+                        self.positionSlider.blockSignals(prev)
                         self.buildViewList(item)
 
                 break
@@ -601,8 +607,13 @@ class HEMainWindow(QMainWindow):
                     if item is self.currentVideoItem:
                         self.progressBar.hide()
                         self.positionSlider.setRange(0, item.vc.duration)
+                        # block signals so we don't trigger setPosition()
+                        prev = self.positionSlider.blockSignals(True)
+                        # in case position was changed above:
+                        self.positionSlider.setValue(item.vc.position)
+                        self.positionSlider.blockSignals(prev)
                         self.buildViewList(item)
-                        # switch to movie view
+                        # switch to movie view if not already there
                         self.views_stackedWidget.setCurrentIndex(0)
 
                 break
@@ -631,6 +642,7 @@ class HEMainWindow(QMainWindow):
         self.currentVideoItem = item
 
         # set up video viewer
+        # attach view to this video's player:
         self.view.setScene(item.vc.graphicsscene)
         item.vc.player.setPlaybackRate(float(
                     self.playbackRate.currentText()))
@@ -644,6 +656,10 @@ class HEMainWindow(QMainWindow):
         self.playerErrorLabel.setText('')
         if item.vc.duration is not None:
             self.positionSlider.setRange(0, item.vc.duration)
+            # block signals so we don't trigger setPosition()
+            prev = self.positionSlider.blockSignals(True)
+            self.positionSlider.setValue(item.vc.position)
+            self.positionSlider.blockSignals(prev)
 
         self.buildViewList(item)
 
@@ -1072,8 +1088,7 @@ class HEMainWindow(QMainWindow):
         if self.currentVideoItem.vc.notes is None:
             return
         self.currentVideoItem.vc.player.pause()
-        newframenum = self.framenum() - 1
-        self.setFramenum(newframenum)
+        self.setFramenum(self.framenum() - 1)
 
     @Slot()
     def stepForward(self):
@@ -1083,8 +1098,7 @@ class HEMainWindow(QMainWindow):
         if self.currentVideoItem.vc.notes is None:
             return
         self.currentVideoItem.vc.player.pause()
-        newframenum = self.framenum() + 1
-        self.setFramenum(newframenum)
+        self.setFramenum(self.framenum() + 1)
 
     @Slot(int)
     def on_rate_change(self, index: int):
@@ -1235,8 +1249,7 @@ class HEMainWindow(QMainWindow):
 
         if key == Qt.Key_Space:
             self.togglePlay()
-        elif (key == Qt.Key_Right and notes is not None
-              and self.currentVideoItem.vc.has_played):
+        elif key == Qt.Key_Right and notes is not None and vc.has_played:
             # advance movie by one frame
             self.stepBackwardUntil = None
             if self.stepForwardUntil is None:
@@ -1258,8 +1271,7 @@ class HEMainWindow(QMainWindow):
                 overshooting by one frame.
                 """
                 self.stepForwardUntil = framenum + 2
-        elif (key == Qt.Key_Left and notes is not None
-              and self.currentVideoItem.vc.has_played):
+        elif key == Qt.Key_Left and notes is not None and vc.has_played:
             # step back one frame
             self.stepForwardUntil = None
             if self.stepBackwardUntil is None:
@@ -1363,7 +1375,6 @@ def positionForFramenum(videocontext, framenum):
     Converts from frame number to position (milliseconds).
     """
     if videocontext.notes is None:
-        return
+        return None
     fps = videocontext.notes['fps']
-    position = ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)
-    return position
+    return ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)

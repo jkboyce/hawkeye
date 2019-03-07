@@ -388,7 +388,7 @@ class HEVideoList(QListWidget):
 
         basename = os.path.basename(filepath)
         item = QListWidgetItem(basename)
-        item.foreground = item.foreground()
+        item.foreground = item.foreground() # retain so we can restore later
         item.setForeground(Qt.gray)
         item.setFlags(item.flags() | Qt.ItemIsSelectable)
 
@@ -410,6 +410,10 @@ class HEVideoContext(QObject):
     """
     Class to hold all the data for an individual video. It also has its own
     instance of QMediaPlayer.
+
+    We initially tried a solution with a single app-wide QMediaPlayer instance
+    where we would swap out the media on switching between videos, but it was
+    never reliable.
     """
     def __init__(self, main_window, filepath):
         super().__init__(parent=main_window)
@@ -429,18 +433,18 @@ class HEVideoContext(QObject):
 
         self.player.setVideoOutput(self.graphicsvideoitem)
 
-        self.filepath = filepath
-        self.notes = None
-        self.videopath = None
-        self.videoresolution = 0
-        self.output = ''
+        self.filepath = filepath        # path to original video file
+        self.notes = None               # notes dictionary
+        self.videopath = None           # path to transcoded display video
+        self.videoresolution = 0        # resolution of display video (vert.)
+        self.output = ''                # output from scanner
         self.doneprocessing = False
-        self.position = 0              # in milliseconds
-        self.duration = None           # in milliseconds
-        self.frames = None             # frames number from 0 to frames-1
-        self.processing_step = 0
+        self.position = 0               # in milliseconds
+        self.duration = None            # in milliseconds
+        self.frames = None              # frames number from 0 to frames-1
+        self.processing_step = 0        # for progress bar during scanning
         self.processing_steps_total = 0
-        self.has_played = False        # see note in HEMainWindow.playMovie()
+        self.has_played = False         # see note in HEMainWindow.playMovie()
 
     def mediaStateChanged(self, state):
         """
@@ -480,6 +484,8 @@ class HEVideoContext(QObject):
         """
         # print('durationChanged() to {}'.format(duration))
         if duration > 0:
+            # QMediaPlayer intermittently reports wonky durations as large
+            # negative values. Hence the check.
             self.duration = duration
 
             if self.isActive():
