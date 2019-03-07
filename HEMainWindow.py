@@ -6,21 +6,18 @@
 
 import os
 import sys
-import time
 from math import ceil, floor, atan, pi
 
 from PySide2.QtCore import QDir, QSize, Qt, QUrl, QThread, Signal, Slot
 from PySide2.QtGui import QFont, QTextCursor, QIcon, QColor
 from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QSlider, QStyle, QVBoxLayout,
-                               QWidget, QGraphicsView, QGraphicsScene,
-                               QListWidgetItem, QSplitter, QStackedWidget,
-                               QPlainTextEdit, QProgressBar, QMainWindow,
-                               QAction, QComboBox, QAbstractItemView,
-                               QToolButton, QCheckBox, QTableWidget,
-                               QTableWidgetItem)
+                               QWidget, QGraphicsView, QListWidgetItem,
+                               QSplitter, QStackedWidget, QPlainTextEdit,
+                               QProgressBar, QMainWindow, QAction, QComboBox,
+                               QAbstractItemView, QToolButton, QCheckBox,
+                               QTableWidget, QTableWidgetItem)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
-from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
 from HEWorker import HEWorker
 from HEWidgets import (HEVideoView, HEVideoList, HEViewList,
@@ -44,8 +41,10 @@ class HEMainWindow(QMainWindow):
         self.app = app
         self.setWindowTitle('Hawkeye')
 
-        self.makeUI()
-
+        self.currentVideoItem = None
+        self.currentViewItem = None
+        self.stepForwardUntil = None
+        self.stepBackwardUntil = None
         self.prefs = {
             'markers': True,
             'torso': False,
@@ -55,12 +54,8 @@ class HEMainWindow(QMainWindow):
             'resolution': 'Actual size'
         }
 
+        self.makeUI()
         self.grabKeyboard()
-        self.currentVideoItem = None
-        self.currentViewItem = None
-        self.stepForwardUntil = None
-        self.stepBackwardUntil = None
-
         self.startWorker()
 
     # -------------------------------------------------------------------------
@@ -478,10 +473,10 @@ class HEMainWindow(QMainWindow):
             item = self.videoList.item(i)
             if item is None:
                 continue
-            if item._filepath == file_id:
-                if item._doneprocessing is False:
-                    item._processing_step = step
-                    item._processing_steps_total = stepstotal
+            if item.vc.filepath == file_id:
+                if item.vc.doneprocessing is False:
+                    item.vc.processing_step = step
+                    item.vc.processing_steps_total = stepstotal
                     if self.currentVideoItem is item:
                         self.progressBar.setValue(step)
                         self.progressBar.setMaximum(stepstotal)
@@ -496,9 +491,9 @@ class HEMainWindow(QMainWindow):
             item = self.videoList.item(i)
             if item is None:
                 continue
-            if item._filepath == file_id:
+            if item.vc.filepath == file_id:
                 # continue to take output even if processing is done
-                item._output += output
+                item.vc.output += output
                 if self.currentVideoItem is item:
                     self.outputWidget.moveCursor(QTextCursor.End)
                     self.outputWidget.insertPlainText(output)
@@ -518,12 +513,12 @@ class HEMainWindow(QMainWindow):
             item = self.videoList.item(i)
             if item is None:
                 continue
-            if item._filepath == file_id:
-                if item._doneprocessing is False:
+            if item.vc.filepath == file_id:
+                if item.vc.doneprocessing is False:
                     # only do these steps on the first error for the item
                     self.worker_queue_length -= 1
-                    item._notes = None
-                    item._doneprocessing = True
+                    item.vc.notes = None
+                    item.vc.doneprocessing = True
                     item.setForeground(item.foreground)
                     if self.currentVideoItem is item:
                         self.buildViewList(item)
@@ -550,13 +545,17 @@ class HEMainWindow(QMainWindow):
                     item.vc.csvpath = fileinfo['csvfile_path']
                     item.vc.notes = notes
                     item.vc.frames = notes['frame_count_estimate'] - 4
-                    item.vc.duration = int(item.vc.frames * 1000 / notes['fps'])
+                    item.vc.duration = int(item.vc.frames * 1000
+                                           / notes['fps'])
 
                     item.vc.player.pause()
                     item.vc.player.setMedia(QMediaContent(
                             QUrl.fromLocalFile(item.vc.videopath)))
+                    item.vc.player.setPosition(0)
+                    item.vc.player.pause()
 
                     if item is self.currentVideoItem:
+                        self.playButton.setEnabled(True)
                         self.positionSlider.setRange(0, item.vc.duration)
                         self.buildViewList(item)
 
@@ -584,7 +583,8 @@ class HEMainWindow(QMainWindow):
                     # recalculate duration in case actual frame count is
                     # different from estimated frame count
                     item.vc.frames = notes['frame_count'] - 4
-                    item.vc.duration = int(item.vc.frames * 1000 / notes['fps'])
+                    item.vc.duration = int(item.vc.frames * 1000
+                                           / notes['fps'])
 
                     if item.vc.position == 0 and notes['runs'] > 0:
                         # if we haven't started playing the video, set its
@@ -593,7 +593,8 @@ class HEMainWindow(QMainWindow):
                         # one second before run's starting frame
                         startframe = max(0, floor(startframe - notes['fps']))
 
-                        item.vc.position = positionForFramenum(item, startframe)
+                        item.vc.position = positionForFramenum(item.vc,
+                                                               startframe)
                         item.vc.player.setPosition(item.vc.position)
                         item.vc.player.pause()      # necessary on Mac?
 
@@ -601,6 +602,7 @@ class HEMainWindow(QMainWindow):
                         self.progressBar.hide()
                         self.positionSlider.setRange(0, item.vc.duration)
                         self.buildViewList(item)
+                        # switch to movie view
                         self.views_stackedWidget.setCurrentIndex(0)
 
                 break
@@ -623,27 +625,30 @@ class HEMainWindow(QMainWindow):
         if item is self.currentVideoItem:
             return
 
-        # pause video player for current movie
+        # pause video player for current movie, if one is showing
         self.pauseMovie()
 
         self.currentVideoItem = item
+
+        # set up video viewer
+        self.view.setScene(item.vc.graphicsscene)
+        item.vc.player.setPlaybackRate(float(
+                    self.playbackRate.currentText()))
+        self.stepForwardUntil = None
+        self.stepBackwardUntil = None
+
+        # set up UI elements
+        self.playButton.setEnabled(item.vc.videopath is not None)
+        self.backButton.setEnabled(item.vc.has_played)
+        self.forwardButton.setEnabled(item.vc.has_played)
+        self.playerErrorLabel.setText('')
+        if item.vc.duration is not None:
+            self.positionSlider.setRange(0, item.vc.duration)
+
         self.buildViewList(item)
 
         if item.vc.doneprocessing:
-            # switch to paused video view
-            self.view.setScene(item.vc.graphicsscene)
-
-            self.stepForwardUntil = None
-            self.stepBackwardUntil = None
-
-            item.vc.player.pause()      # necessary?
-
-            self.positionSlider.setRange(0, item.vc.duration)
-            self.playButton.setEnabled(True)
-            self.backButton.setEnabled(False)
-            self.forwardButton.setEnabled(False)
-            self.playerErrorLabel.setText('')
-
+            # switch to video view
             self.views_stackedWidget.setCurrentIndex(0)
         else:
             # switch to 'scanner output' view
@@ -662,7 +667,7 @@ class HEMainWindow(QMainWindow):
         self.viewList.clear()
 
         if (not videoitem.vc.doneprocessing
-            and videoitem.vc.videopath is not None):
+                and videoitem.vc.videopath is not None):
             # display video is ready but notes processing still underway
             headeritem = QListWidgetItem('')
             headeritem._type = 'video'
@@ -1111,7 +1116,8 @@ class HEMainWindow(QMainWindow):
         """
         self.stepBackwardUntil = self.stepForwardUntil = None
 
-        if self.currentVideoItem.vc.player.state() == QMediaPlayer.PlayingState:
+        if (self.currentVideoItem.vc.player.state() ==
+                QMediaPlayer.PlayingState):
             self.pauseMovie()
         else:
             self.playMovie()
@@ -1124,11 +1130,11 @@ class HEMainWindow(QMainWindow):
         This is NOT called when the position slider changes as a result of
         playing the movie. See positionChanged().
         """
-        if self.currentVideoItem.vc.notes is not None:
-            framenum = framenumForPosition(self.currentVideoItem, position)
-            self.setFramenum(framenum)
+        vc = self.currentVideoItem.vc
+        if vc.notes is not None:
+            self.setFramenum(framenumForPosition(vc, position))
         else:
-            self.currentVideoItem.vc.player.setPosition(position)
+            vc.player.setPosition(position)
 
     @Slot()
     def exitCall(self):
@@ -1145,27 +1151,25 @@ class HEMainWindow(QMainWindow):
     #  Media player
     # -------------------------------------------------------------------------
 
-
     def framenum(self):
         """
         Returns the frame number (integer) currently visible in the player
         """
         if self.currentVideoItem is None:
             return 0
-        pos = self.currentVideoItem.player.position()
-        framenum = framenumForPosition(self.currentVideoItem, pos)
-        return framenum
+        vc = self.currentVideoItem.vc
+        return framenumForPosition(vc, vc.player.position())
 
     def setFramenum(self, framenum):
         """
         Sets the frame number in the player.
         """
         # print('got to setFramenum, value = {}'.format(framenum))
-        if self.currentVideoItem._notes is None:
+        vc = self.currentVideoItem.vc
+        if vc.notes is None:
             return
-        framenum = min(max(0, framenum), self.currentVideoItem._frames - 1)
-        position = positionForFramenum(self.currentVideoItem, framenum)
-        self.mediaPlayer.setPosition(position)
+        framenum = min(max(0, framenum), vc.frames - 1)
+        vc.player.setPosition(positionForFramenum(vc, framenum))
 
     def pauseMovie(self):
         """
@@ -1174,22 +1178,26 @@ class HEMainWindow(QMainWindow):
         get off-by-one errors in the frame # when drawing overlays on top of
         the paused video.
         """
-        if self.mediaPlayer.state() == QMediaPlayer.PlayingState:
-            self.mediaPlayer.pause()
-            if self.currentVideoItem._notes is not None:
-                position = self.mediaPlayer.position()
-                framenum = framenumForPosition(self.currentVideoItem, position)
+        if self.currentVideoItem is None:
+            return
+        vc = self.currentVideoItem.vc
+        if vc.player.state() == QMediaPlayer.PlayingState:
+            vc.player.pause()
+            if vc.notes is not None:
+                framenum = framenumForPosition(vc, vc.player.position())
                 self.setFramenum(framenum)
-                self.backButton.setEnabled(self.currentVideoItem._has_played)
-                self.forwardButton.setEnabled(
-                        self.currentVideoItem._has_played)
+                self.backButton.setEnabled(vc.has_played)
+                self.forwardButton.setEnabled(vc.has_played)
 
     def playMovie(self):
         """
         Utility function to un-pause the video.
         """
-        if self.mediaPlayer.state() != QMediaPlayer.PlayingState:
-            self.mediaPlayer.play()
+        if self.currentVideoItem is None:
+            return
+        vc = self.currentVideoItem.vc
+        if vc.player.state() != QMediaPlayer.PlayingState:
+            vc.player.play()
             self.backButton.setEnabled(False)
             self.forwardButton.setEnabled(False)
 
@@ -1197,8 +1205,7 @@ class HEMainWindow(QMainWindow):
             # where the step forward/backward actions don't work correctly
             # until the video has entered a playing state. (This issue occurs
             # on both Mac and Windows.)
-            if self.currentVideoItem is not None:
-                self.currentVideoItem._has_played = True
+            vc.has_played = True
 
     # -------------------------------------------------------------------------
     #  QMainWindow overrides
@@ -1215,19 +1222,21 @@ class HEMainWindow(QMainWindow):
 
         keycodes at http://doc.qt.io/qt-5/qt.html#Key-enum
         """
-        if self.views_stackedWidget.currentIndex() != 0:
+        if (self.views_stackedWidget.currentIndex() != 0
+                or self.currentVideoItem is None):
             super().keyPressEvent(e)
             return
 
         key = e.key()
         framenum = self.framenum()
-        notes = self.currentVideoItem._notes
+        vc = self.currentVideoItem.vc
+        notes = vc.notes
         viewitem = self.currentViewItem
 
         if key == Qt.Key_Space:
             self.togglePlay()
         elif (key == Qt.Key_Right and notes is not None
-              and self.currentVideoItem._has_played):
+              and self.currentVideoItem.vc.has_played):
             # advance movie by one frame
             self.stepBackwardUntil = None
             if self.stepForwardUntil is None:
@@ -1250,7 +1259,7 @@ class HEMainWindow(QMainWindow):
                 """
                 self.stepForwardUntil = framenum + 2
         elif (key == Qt.Key_Left and notes is not None
-              and self.currentVideoItem._has_played):
+              and self.currentVideoItem.vc.has_played):
             # step back one frame
             self.stepForwardUntil = None
             if self.stepBackwardUntil is None:
@@ -1340,21 +1349,21 @@ class HEMainWindow(QMainWindow):
 # -----------------------------------------------------------------------------
 
 
-def framenumForPosition(videoitem, position):
+def framenumForPosition(videocontext, position):
     """
     Converts from position (milliseconds) to frame number.
     """
-    if videoitem.vc.notes is None:
+    if videocontext.notes is None:
         return None
-    return floor(position * videoitem.vc.notes['fps'] / 1000)
+    return floor(position * videocontext.notes['fps'] / 1000)
 
 
-def positionForFramenum(videoitem, framenum):
+def positionForFramenum(videocontext, framenum):
     """
     Converts from frame number to position (milliseconds).
     """
-    if videoitem.vc.notes is None:
+    if videocontext.notes is None:
         return
-    fps = videoitem.vc.notes['fps']
+    fps = videocontext.notes['fps']
     position = ceil(framenum * 1000 / fps) + floor(0.5 * 1000 / fps)
     return position

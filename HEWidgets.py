@@ -8,11 +8,11 @@ import os
 import platform
 from math import log10, floor
 
-from PySide2.QtCore import QSize, Qt, QPoint, QPointF
+from PySide2.QtCore import QObject, Slot, QSize, Qt, QPoint, QPointF
 from PySide2.QtGui import QPainter, QPainterPath, QPen
 from PySide2.QtWidgets import (QWidget, QGraphicsView, QGraphicsScene,
                                QListWidget, QListWidgetItem, QAbstractItemView,
-                               QStyledItemDelegate)
+                               QStyledItemDelegate, QStyle)
 from PySide2.QtMultimedia import QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -26,7 +26,7 @@ class HEVideoView(QGraphicsView):
         super().__init__(parent=main_window)
         self.setFrameShape(QGraphicsView.NoFrame)
         self.window = main_window
-        self.videosnappedtoframe = False
+        self.videosnappedtoframe = True
 
     def paintEvent(self, e):
         # draw the video frame
@@ -37,25 +37,26 @@ class HEVideoView(QGraphicsView):
         videoitem = self.window.currentVideoItem
         if videoitem is None:
             return
-        notes = videoitem._notes
+        notes = videoitem.vc.notes
         prefs = self.window.prefs
+        player = videoitem.vc.player
 
         # record current position in movie, so we can cue back if we switch
         # between movies
-        pos = self.window.mediaPlayer.position()
-        videoitem._position = pos
+        pos = player.position()
+        videoitem.vc.position = pos
 
         # decide if we should draw anything else
         if notes is None:
             return
-        moviestatus = self.window.mediaPlayer.mediaStatus()
+        moviestatus = player.mediaStatus()
         if (moviestatus != QMediaPlayer.BufferedMedia and
                 moviestatus != QMediaPlayer.BufferingMedia and
                 moviestatus != QMediaPlayer.EndOfMedia):
             return
 
         framenum = self.window.framenum()
-        frames_total = videoitem._frames
+        frames_total = videoitem.vc.frames
 
         # the following is a hack to solve the way QMediaPlayer on Windows
         # reports positions within videos, so we don't get an off-by-one error
@@ -72,15 +73,15 @@ class HEVideoView(QGraphicsView):
         elif (framenum >= (frames_total - 1) or
               moviestatus == QMediaPlayer.EndOfMedia):
             # print('hit end of movie')
-            self.window.mediaPlayer.play()
-            self.window.mediaPlayer.pause()
+            player.play()
+            player.pause()
             self.window.setFramenum(frames_total - 1)
             framenum = frames_total - 1
-            self.window.backButton.setEnabled(videoitem._has_played)
+            self.window.backButton.setEnabled(videoitem.vc.has_played)
             self.window.forwardButton.setEnabled(False)
         else:
-            can_step = (self.window.mediaPlayer.state() !=
-                        QMediaPlayer.PlayingState and videoitem._has_played)
+            can_step = (player.state() != QMediaPlayer.PlayingState
+                        and videoitem.vc.has_played)
             self.window.backButton.setEnabled(can_step)
             self.window.forwardButton.setEnabled(can_step)
 
@@ -121,13 +122,13 @@ class HEVideoView(QGraphicsView):
 
         if notes['step'] >= 5:
             # things to draw when the full scan has been completed
-            if videoitem._videoresolution == 0:
+            if videoitem.vc.videoresolution == 0:
                 def mapToDisplayVideo(x, y):
                     return x, y
             else:
                 orig_height = notes['frame_height']
                 orig_width = notes['frame_width']
-                display_height = videoitem._videoresolution
+                display_height = videoitem.vc.videoresolution
                 display_width = round(orig_width * display_height
                                       / orig_height)
                 if display_width % 2 == 1:
@@ -289,8 +290,9 @@ class HEVideoView(QGraphicsView):
         digits = 1 if framenum <= 1 else 1 + floor(log10(framenum))
         digits_max = (1 if frames_total <= 1
                       else 1 + floor(log10(frames_total - 1)))
+        graphicsvideoitem = videoitem.vc.graphicsvideoitem
         movie_lower_left_x, movie_lower_left_y = self.mapToView(
-                0.0, self.window.item.size().height())
+                0.0, graphicsvideoitem.size().height())
         lower_left_x = max(0, movie_lower_left_x)
         lower_left_y = min(vp.size().height(), movie_lower_left_y)
         painter.setOpacity(1.0)
@@ -314,24 +316,29 @@ class HEVideoView(QGraphicsView):
         map coordinate from movie coordinates (pixels) to view coordinates
         """
         movie_coord = QPointF(x, y)
-        scene_coord = self.window.item.mapToScene(movie_coord)
+        graphicsvideoitem = self.window.currentVideoItem.vc.graphicsvideoitem
+        scene_coord = graphicsvideoitem.mapToScene(movie_coord)
         view_coord = self.mapFromScene(scene_coord)
         return view_coord.x(), view_coord.y()
 
     def resizeEvent(self, e):
         if self.window is not None:
             if self.videosnappedtoframe:
-                self.fitInView(self.scene().itemsBoundingRect(),
-                               Qt.KeepAspectRatio)
-            else:
+                scene = self.scene()
+                if scene is not None:
+                    self.fitInView(scene.itemsBoundingRect(),
+                                   Qt.KeepAspectRatio)
+            elif self.window.currentVideoItem is not None:
                 # see if the entire movie frame is now visible; if so then
                 # snap to frame
                 portRect = self.viewport().rect()
                 scenePolygon = self.mapToScene(portRect)
-                itemPolygon = self.window.item.mapFromScene(scenePolygon)
+                graphicsvideoitem = (self.window.currentVideoItem
+                                     .vc.graphicsvideoitem)
+                itemPolygon = graphicsvideoitem.mapFromScene(scenePolygon)
                 itemRect = itemPolygon.boundingRect()
-                if itemRect.contains(self.window.item.boundingRect()):
-                    self.fitInView(self.window.item.boundingRect(),
+                if itemRect.contains(graphicsvideoitem.boundingRect()):
+                    self.fitInView(graphicsvideoitem.boundingRect(),
                                    Qt.KeepAspectRatio)
                     self.window.zoomOutButton.setEnabled(False)
                     self.videosnappedtoframe = True
@@ -397,6 +404,7 @@ class HEVideoList(QListWidget):
         return QSize(150, 100)
 
 # -----------------------------------------------------------------------------
+
 
 class HEVideoContext(QObject):
     """
