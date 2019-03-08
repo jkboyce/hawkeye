@@ -10,7 +10,6 @@ import io
 import time
 import subprocess
 import platform
-import copy
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
@@ -137,8 +136,7 @@ class HEWorker(QObject):
 
         if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
-            self.sig_video_done.emit(file_id, fileinfo, resolution,
-                                     copy.deepcopy(notes))
+            self.sig_video_done.emit(file_id, fileinfo, resolution, notes)
 
         if need_notes and not self.abort():
             if self.make_scan_video(fileinfo) != 0:

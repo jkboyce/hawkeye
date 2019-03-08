@@ -548,6 +548,7 @@ class HEMainWindow(QMainWindow):
                     item.vc.duration = int(item.vc.frames * 1000
                                            / notes['fps'])
                     item.vc.position = 0
+                    item.vc.has_played = False
 
                     item.vc.player.pause()
                     item.vc.player.setMedia(QMediaContent(
@@ -1008,6 +1009,7 @@ class HEMainWindow(QMainWindow):
         # to create the needed video files. Do the current video first.
         if self.prefs['resolution'] != old_resolution:
             if self.currentVideoItem is not None:
+                self.currentVideoItem.vc.doneprocessing = False
                 self.sig_new_work.emit(self.currentVideoItem.vc.filepath)
                 self.worker_queue_length += 1
 
@@ -1021,6 +1023,7 @@ class HEMainWindow(QMainWindow):
             for i in range(self.videoList.count()):
                 item = self.videoList.item(i)
                 if item is not None and item is not self.currentVideoItem:
+                    item.vc.doneprocessing = False
                     self.sig_new_work.emit(item.vc.filepath)
                     self.worker_queue_length += 1
 
@@ -1153,6 +1156,8 @@ class HEMainWindow(QMainWindow):
         Called when the user selects Quit in the menu, or clicks the close
         box in the window's corner. This does a clean exit of the application.
         """
+        if self.currentVideoItem is not None:
+            self.currentVideoItem.vc.player.pause()
         self._thread.requestInterruption()
         self._thread.quit()             # stop worker thread's event loop
         self._thread.wait(5000)         # wait up to five seconds to stop
@@ -1244,7 +1249,7 @@ class HEMainWindow(QMainWindow):
         notes = vc.notes
         viewitem = self.currentViewItem
 
-        if key == Qt.Key_Space:
+        if key == Qt.Key_Space and self.playButton.isEnabled():
             self.togglePlay()
         elif key == Qt.Key_Right and notes is not None and vc.has_played:
             # advance movie by one frame

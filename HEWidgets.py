@@ -5,7 +5,7 @@
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
-import platform
+# import platform
 from math import log10, floor
 
 from PySide2.QtCore import QObject, Slot, QSize, Qt, QPoint, QPointF
@@ -60,30 +60,34 @@ class HEVideoView(QGraphicsView):
 
         # the following is a hack to solve the way QMediaPlayer on Windows
         # reports positions within videos, so we don't get an off-by-one error
+        """
         if platform.system() == 'Windows':
             notes_framenum = framenum
             # notes_framenum = framenum + 1
             # seems to be working correctly now...
         else:
             notes_framenum = framenum
+        """
+        notes_framenum = framenum
 
         # check if we're at the beginning or end of the movie
         if framenum == 0:
             self.window.backButton.setEnabled(False)
         elif (framenum >= (frames_total - 1) or
               moviestatus == QMediaPlayer.EndOfMedia):
-            # player.play()
-            player.pause()
+            self.window.pauseMovie()
             if framenum != frames_total - 1:
                 self.window.setFramenum(frames_total - 1)
-            # framenum = frames_total - 1
+            framenum = frames_total - 1
             self.window.backButton.setEnabled(videoitem.vc.has_played)
             self.window.forwardButton.setEnabled(False)
+            self.window.playButton.setEnabled(False)
         else:
             can_step = (player.state() != QMediaPlayer.PlayingState
                         and videoitem.vc.has_played)
             self.window.backButton.setEnabled(can_step)
             self.window.forwardButton.setEnabled(can_step)
+            self.window.playButton.setEnabled(True)
 
         # do bounds clipping on stepping limits, and also check if we've hit
         # the end of a range we're stepping through
@@ -422,14 +426,15 @@ class HEVideoContext(QObject):
         super().__init__(parent=main_window)
         self.window = main_window
 
-        self.player = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        self.player = QMediaPlayer(parent=main_window,
+                                   flags=QMediaPlayer.VideoSurface)
         self.player.stateChanged.connect(self.mediaStateChanged)
         self.player.positionChanged.connect(self.positionChanged)
         self.player.durationChanged.connect(self.durationChanged)
         self.player.error.connect(self.handlePlayerError)
 
         self.graphicsvideoitem = QGraphicsVideoItem()
-        self.graphicsscene = QGraphicsScene(self.window.view)
+        self.graphicsscene = QGraphicsScene(parent=self.window.view)
         self.graphicsscene.addItem(self.graphicsvideoitem)
         self.graphicsvideoitem.nativeSizeChanged.connect(
                 self.videoNativeSizeChanged)
