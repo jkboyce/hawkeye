@@ -45,7 +45,7 @@ class HEMainWindow(QMainWindow):
         self.currentViewItem = None
         self.stepForwardUntil = None
         self.stepBackwardUntil = None
-        
+
         self.prefs = {
             'markers': True,
             'torso': False,
@@ -146,12 +146,6 @@ class HEMainWindow(QMainWindow):
         control bar below it.
         """
         self.view = HEVideoView(self)
-        """
-        self.item = QGraphicsVideoItem()
-        self.scene = QGraphicsScene(self.view)
-        self.scene.addItem(self.item)
-        self.view.setScene(self.scene)
-        """
         self.view.setDragMode(QGraphicsView.NoDrag)
 
         self.zoomInButton = QPushButton('& + ', self)
@@ -216,8 +210,8 @@ class HEMainWindow(QMainWindow):
         self.playerErrorLabel.setSizePolicy(QSizePolicy.Preferred,
                                             QSizePolicy.Maximum)
         aboutButton = QToolButton()
-        aboutButton.setIcon(QIcon(os.path.join(base_dir,
-                                               'resources/about_icon.png')))
+        aboutButton.setIcon(QIcon(
+                os.path.join(base_dir, 'resources/about_icon.png')))
         aboutButton.setIconSize(QSize(20, 20))
         aboutButton.setStyleSheet('border: none;')
         aboutButton.clicked.connect(self.showAbout)
@@ -271,7 +265,7 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.prefs_torso)
         controls_layout.addWidget(self.prefs_parabolas)
         controls_layout.addWidget(self.prefs_throwlabels)
-        controls_layout.addWidget(self.prefs_ideal_throws)
+        # controls_layout.addWidget(self.prefs_ideal_throws)
         controls_layout.addLayout(resolution_layout)
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
@@ -478,7 +472,7 @@ class HEMainWindow(QMainWindow):
                 if item.vc.doneprocessing is False:
                     item.vc.processing_step = step
                     item.vc.processing_steps_total = stepstotal
-                    if self.currentVideoItem is item:
+                    if item is self.currentVideoItem:
                         self.progressBar.setValue(step)
                         self.progressBar.setMaximum(stepstotal)
                 break
@@ -495,7 +489,7 @@ class HEMainWindow(QMainWindow):
             if item.vc.filepath == file_id:
                 # continue to take output even if processing is done
                 item.vc.output += output
-                if self.currentVideoItem is item:
+                if item is self.currentVideoItem:
                     self.outputWidget.moveCursor(QTextCursor.End)
                     self.outputWidget.insertPlainText(output)
                     self.outputWidget.moveCursor(QTextCursor.End)
@@ -521,7 +515,7 @@ class HEMainWindow(QMainWindow):
                     item.vc.notes = None
                     item.vc.doneprocessing = True
                     item.setForeground(item.foreground)
-                    if self.currentVideoItem is item:
+                    if item is self.currentVideoItem:
                         self.buildViewList(item)
                         self.progressBar.hide()
                 break
@@ -545,6 +539,11 @@ class HEMainWindow(QMainWindow):
                     item.vc.videoresolution = resolution
                     item.vc.csvpath = fileinfo['csvfile_path']
                     item.vc.notes = notes
+                    # The following defines the range of frames accessible in
+                    # the viewer: Frame number can go from 0 to frames-1
+                    # inclusive. We shave some frames off the end because we
+                    # don't want the player to reach the actual end of media,
+                    # and there's unlikely to be anything interesting there.
                     item.vc.frames = notes['frame_count_estimate'] - 4
                     item.vc.duration = int(item.vc.frames * 1000
                                            / notes['fps'])
@@ -642,7 +641,7 @@ class HEMainWindow(QMainWindow):
         self.currentVideoItem = item
 
         # set up video viewer
-        # attach view to this video's player:
+        # attach HEVideoView to this video's media player:
         self.view.setScene(item.vc.graphicsscene)
         item.vc.player.setPlaybackRate(float(
                     self.playbackRate.currentText()))
@@ -788,8 +787,6 @@ class HEMainWindow(QMainWindow):
 
         if item._type == 'video':
             self.views_stackedWidget.setCurrentIndex(0)
-            # self.mediaPlayer.setPosition(self.currentVideoItem._position)
-            # self.pauseMovie()
         elif item._type == 'output':
             self.pauseMovie()
             self.outputWidget.setPlainText(self.currentVideoItem.vc.output)

@@ -25,16 +25,16 @@ class HEWorker(QObject):
        `notes` dictionary with object detections, arc parameters, etc.
     2. Transcoding the video into a format that supports smooth cueing
 
-    We break up the scanning into two parts so that we can return a
+    We break up scanning (part 1 above) into two parts so that we can return a
     transcoded display video back to the main thread as quickly as possible.
     That way the user can view the video while the rest of scanning is still
     underway.
 
-    We put this in a separate QObject and use signals and slots to communicate
-    with it, so that we can do these time-consuming operations on a thread
-    separate from the main event loop. The signal/slot mechanism is a thread-
-    safe way to communicate in Qt. Look in HEMainWindow.startWorker() to see
-    how this thread is initiated and signals and slots connected.
+    We put this worker in a separate QObject and use signals and slots to
+    communicate with it, so that we can do these time-consuming operations on a
+    thread separate from the main event loop. The signal/slot mechanism is a
+    thread-safe way to communicate in Qt. Look in HEMainWindow.startWorker() to
+    see how this thread is initiated and signals and slots connected.
     """
 
     # progress indicator signal for work-in-process
@@ -234,7 +234,7 @@ class HEWorker(QObject):
     def make_display_video(self, fileinfo, notes):
         """
         The video we display in the UI is not the original video, but a version
-        transcoded with FFmpeg. We transcode for three reasons:
+        transcoded with FFmpeg. We transcode for four reasons:
 
         1. The video player can't smoothly step backward a frame at a time
            unless every frame is coded as a keyframe. This is rarely the case
@@ -244,6 +244,9 @@ class HEWorker(QObject):
            to a maximum value, in which case we want to rescale.
         3. The video player on Windows gives an error when it loads a video
            with no audio track. Fix this by adding a null audio track.
+        4. FFmpeg reads far more video formats/codecs than QMediaViewer, so
+           transcoding into standard H.264/mp4 allows us to be compatible with
+           a much wider range of source video formats.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -307,11 +310,15 @@ class HEWorker(QObject):
 
     def make_scan_video(self, fileinfo):
         """
-        Create a video at 640x480 resolution to use as input for the feature
-        detector. We use a fixed resolution because (a) the feature detector
-        performs well on videos of this scale, and (b) we may want to
+        Create an H.264/mp4 video at 640x480 resolution to use as input for the
+        feature detector. We use a fixed resolution because (a) the feature
+        detector performs well on videos of this scale, and (b) we may want to
         experiment with a neural network-based feature detector in the future,
         which would need a fixed input dimension.
+
+        Also OpenCV's support for codecs is limited but it supports H.264/mp4
+        on every platform tested, so transcoding allows us to process a much
+        wider variety of input formats.
 
         Returns 0 on success, 1 on failure.
         """
@@ -435,3 +442,5 @@ class HEOutputHandler(io.StringIO):
 
 class HEAbortException(Exception):
     pass
+
+# -----------------------------------------------------------------------------

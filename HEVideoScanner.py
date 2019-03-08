@@ -80,7 +80,7 @@ class HEVideoScanner:
     notes['runs']:
         number of runs detected in video (int)
     notes['run'][run_num]:
-        run dictionary describing run number run_num (dict)
+        run dictionary describing run number run_num (dict) -- SEE BELOW
 
     The 'run_dict' dictionary for each run is defined as:
 
@@ -114,7 +114,7 @@ class HEVideoScanner:
                 Filename of video to do image detection on. This is assumed to
                 be a rescaled version of the video in the 'filename' argument,
                 with the same frame rate. If provided, the object detector
-                in step 1 will use this version of the video and translate
+                in step 2 will use this version of the video and translate
                 coordinates to the original.
             params(dict, optional):
                 Parameters to configure the scanner. The function
@@ -2423,7 +2423,7 @@ if __name__ == '__main__':
     # print(cv2.getBuildInformation())
 
     if watch_video:
-        notes_step = 4
+        notes_step = 5
         start_frame = 700
 
         if 1 <= notes_step <= 5:

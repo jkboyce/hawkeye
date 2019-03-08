@@ -72,11 +72,11 @@ class HEVideoView(QGraphicsView):
             self.window.backButton.setEnabled(False)
         elif (framenum >= (frames_total - 1) or
               moviestatus == QMediaPlayer.EndOfMedia):
-            # print('hit end of movie')
-            player.play()
+            # player.play()
             player.pause()
-            self.window.setFramenum(frames_total - 1)
-            framenum = frames_total - 1
+            if framenum != frames_total - 1:
+                self.window.setFramenum(frames_total - 1)
+            # framenum = frames_total - 1
             self.window.backButton.setEnabled(videoitem.vc.has_played)
             self.window.forwardButton.setEnabled(False)
         else:
@@ -356,6 +356,9 @@ class HEVideoList(QListWidget):
     """
     Subclass of QListWidget that implements drag-and-drop of files onto the
     list.
+
+    We also attach a HEVideoContext object to each item in this list, into
+    which all per-video data is stored in Hawkeye. See addVideo() below.
     """
     def __init__(self, main_window):
         super().__init__(parent=main_window)
@@ -388,7 +391,7 @@ class HEVideoList(QListWidget):
 
         basename = os.path.basename(filepath)
         item = QListWidgetItem(basename)
-        item.foreground = item.foreground() # retain so we can restore later
+        item.foreground = item.foreground()   # retain so we can restore later
         item.setForeground(Qt.gray)
         item.setFlags(item.flags() | Qt.ItemIsSelectable)
 
@@ -412,7 +415,7 @@ class HEVideoContext(QObject):
     instance of QMediaPlayer.
 
     We initially tried a solution with a single app-wide QMediaPlayer instance
-    where we would swap out the media on switching between videos, but it was
+    where we swapped out the media on each switch between videos, but it was
     never reliable.
     """
     def __init__(self, main_window, filepath):
@@ -451,10 +454,6 @@ class HEVideoContext(QObject):
         Signaled by the QMediaPlayer when the state of the media changes from
         paused to playing, and vice versa.
         """
-        """
-        state = self.mediaPlayer.state()
-        print(f'media state changed to: {state}')
-        """
         if self.isActive():
             if self.player.state() == QMediaPlayer.PlayingState:
                 self.window.playButton.setIcon(
@@ -477,32 +476,19 @@ class HEVideoContext(QObject):
             self.window.positionSlider.setValue(position)
             self.window.positionSlider.blockSignals(prev)
 
+    @Slot(int)
     def durationChanged(self, duration):
         """
         Signaled by the QMediaPlayer when the movie duration changes. The
         duration is given in milliseconds.
         """
-        # print('durationChanged() to {}'.format(duration))
         if duration > 0:
-            # QMediaPlayer intermittently reports wonky durations as large
-            # negative values. Hence the check.
+            # QMediaPlayer intermittently reports bad durations in the form of
+            # large negative values. Hence the check.
             self.duration = duration
 
             if self.isActive():
                 self.window.positionSlider.setRange(0, duration)
-
-    def videoNativeSizeChanged(self, size):
-        """
-        Signaled by the QMediaPlayer when the video size changes.
-        """
-        self.graphicsvideoitem.setSize(size)
-
-        if self.isActive():
-            self.window.view.fitInView(self.graphicsvideoitem.boundingRect(),
-                                       Qt.KeepAspectRatio)
-            self.window.zoomInButton.setEnabled(True)
-            self.window.zoomOutButton.setEnabled(False)
-            self.window.view.videosnappedtoframe = True
 
     @Slot()
     def handlePlayerError(self):
@@ -514,6 +500,20 @@ class HEVideoContext(QObject):
             err = self.player.errorString()
             code = self.player.error()
             self.window.playerErrorLabel.setText(f'Error: {err} (code {code})')
+
+    @Slot(int)
+    def videoNativeSizeChanged(self, size):
+        """
+        Signaled when the video size changes.
+        """
+        self.graphicsvideoitem.setSize(size)
+
+        if self.isActive():
+            self.window.view.fitInView(self.graphicsvideoitem.boundingRect(),
+                                       Qt.KeepAspectRatio)
+            self.window.zoomInButton.setEnabled(True)
+            self.window.zoomOutButton.setEnabled(False)
+            self.window.view.videosnappedtoframe = True
 
     def isActive(self):
         """
@@ -543,8 +543,8 @@ class HEViewList(QListWidget):
 
 class HETableViewDelegate(QStyledItemDelegate):
     """
-    Subclass of QStyledItemDelegate to draw horizontal lines between
-    separate runs in our Data View QTableWidget.
+    Subclass of QStyledItemDelegate to draw horizontal lines between separate
+    runs in our Data View QTableWidget.
     """
     def __init__(self, table_widget, boundary_indices):
         super().__init__()
