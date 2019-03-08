@@ -25,10 +25,9 @@ class HEWorker(QObject):
        `notes` dictionary with object detections, arc parameters, etc.
     2. Transcoding the video into a format that supports smooth cueing
 
-    We break up scanning (part 1 above) into two parts so that we can return a
-    transcoded display video back to the main thread as quickly as possible.
-    That way the user can view the video while the rest of scanning is still
-    underway.
+    We break up scanning (part 1 above) into two parts, so that we can return a
+    transcoded display video to the main thread as quickly as possible. That
+    way the user can view the video while the rest of scanning is ongoing.
 
     We put this worker in a separate QObject and use signals and slots to
     communicate with it, so that we can do these time-consuming operations on a
@@ -244,7 +243,7 @@ class HEWorker(QObject):
            to a maximum value, in which case we want to rescale.
         3. The video player on Windows gives an error when it loads a video
            with no audio track. Fix this by adding a null audio track.
-        4. FFmpeg reads far more video formats/codecs than QMediaViewer, so
+        4. FFmpeg reads far more video formats/codecs than QMediaPlayer, so
            transcoding into standard H.264/mp4 allows us to be compatible with
            a much wider range of source video formats.
         """
