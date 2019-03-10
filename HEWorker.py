@@ -21,13 +21,13 @@ class HEWorker(QObject):
     """
     Worker that processes videos. Processing consists of two parts:
 
-    1. Scanning the video file to analyze the juggling and produce the
+    1. Transcoding the video into a format that supports smooth cueing
+    2. Scanning the video file to analyze the juggling and produce the
        `notes` dictionary with object detections, arc parameters, etc.
-    2. Transcoding the video into a format that supports smooth cueing
 
-    We break up scanning (part 1 above) into two parts, so that we can return a
-    transcoded display video to the main thread as quickly as possible. That
-    way the user can view the video while the rest of scanning is ongoing.
+    Video transcoding (step 1) is done first and reported back to the UI
+    thread, so that the user can view the video while scanning is still
+    underway.
 
     We put this worker in a separate QObject and use signals and slots to
     communicate with it, so that we can do these time-consuming operations on a
@@ -136,6 +136,8 @@ class HEWorker(QObject):
             alternate for line above:
             if self.run_scanner(fileinfo, scanner, steps=(1, 1),
                                 writenotes=False) != 0:
+                self.sig_error.emit(
+                        file_id, f'Error getting video metadata')
                 return
             """
 
@@ -301,6 +303,9 @@ class HEWorker(QObject):
                 file_id, '\n####### Error running FFprobe #######\n')
             self.sig_output.emit(
                 file_id, 'Key error accessing returned data\n\n\n')
+
+        self.sig_error.emit(
+                file_id, f'Error getting video metadata')
         return 1
 
     def make_display_video(self, fileinfo, notes):
