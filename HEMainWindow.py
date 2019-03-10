@@ -6,6 +6,7 @@
 
 import os
 import sys
+import platform
 from math import ceil, floor, atan, pi
 
 from PySide2.QtCore import QDir, QSize, Qt, QUrl, QThread, Signal, Slot
@@ -54,6 +55,11 @@ class HEMainWindow(QMainWindow):
             'ideal_throws': False,
             'resolution': 'Actual size'
         }
+
+        # Media player on Mac OS bogs down on videos at 1080p resolution,
+        # so downsample to 720 as a default.
+        if platform.system() == 'Darwin':
+            self.prefs['resolution'] = '720'
 
         self.makeUI()
         self.grabKeyboard()
