@@ -31,8 +31,8 @@ class HEVideoScanner:
     which steps to do (default is all), and whether to write results to
     disk after processing.
 
-    The 'notes' dictionary contains all scan results, and the data is recorded
-    as follows:
+    The 'notes' dictionary contains all scan results, with the data recorded as
+    follows:
 
     notes['version']:
         sequential number incremented whenever notes dictionary format

@@ -1184,7 +1184,7 @@ class HEMainWindow(QMainWindow):
 
     def setFramenum(self, framenum):
         """
-        Sets the frame number in the player.
+        Sets the frame number in the currently-visible player.
         """
         # print('got to setFramenum, value = {}'.format(framenum))
         vc = self.currentVideoItem.vc

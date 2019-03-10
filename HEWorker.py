@@ -133,11 +133,10 @@ class HEWorker(QObject):
             if self.get_video_metadata(fileinfo, notes) != 0:
                 return
             """
-            alternate for line above:
+            OpenCV-based alternative for line above:
             if self.run_scanner(fileinfo, scanner, steps=(1, 1),
                                 writenotes=False) != 0:
-                self.sig_error.emit(
-                        file_id, f'Error getting video metadata')
+                self.sig_error.emit(file_id, 'Error getting video metadata')
                 return
             """
 
@@ -190,17 +189,17 @@ class HEWorker(QObject):
 
     def get_video_metadata(self, fileinfo, notes):
         """
-        Run FFprobe to get the source video metadata. In particular we need:
+        Run FFprobe to get some source video metadata. In particular we need:
 
         1. width in pixels (int)
         2. height in pixels (int)
         3. frames per second (float)
         4. frame count (int)
 
-        This function replaces Step 1 in HEVideoScanner, which gets this data
-        using OpenCV. We use FFprobe here because it can analyze a wider
-        variety of input formats. In this way all OpenCV processing is done on
-        the video we create in make_scan_video() below.
+        This function replaces step 1 in HEVideoScanner, which gets this data
+        using OpenCV. We use FFprobe here because it may handle a wider
+        variety of input formats, and it reports information not accessible
+        through the OpenCV API such as display aspect ratio (DAR).
 
         Returns 0 on success, 1 on failure.
         """
@@ -259,14 +258,14 @@ class HEWorker(QObject):
             dar = video_metadata['display_aspect_ratio']
 
             # The input video might have non-square pixels, which is a problem
-            # for us in the visual analysis. So we will use FFmpeg's scaler to
-            # create scan and display videos with square pixels (i.e. SAR=1:1).
-            # Here we use the DAR to calculate what the pixel width will be
-            # when we scale to square pixels.
+            # for us in the visual analysis. Later we will use FFmpeg's scaler
+            # to create scan and display videos with square pixels (i.e.
+            # SAR=1:1). Here we use the DAR to calculate what the pixel width
+            # will be when we scale to square pixels.
             dar_parts = dar.split(':')
             width = height * int(dar_parts[0]) // int(dar_parts[1])
 
-            # the fps result can either be in numeric form like '30' or
+            # the fps response can either be in numeric form like '30' or
             # '59.94', or in rational form like '60000/1001'. In any case we
             # want fps as a float.
             if '/' in fps_raw:
@@ -297,15 +296,14 @@ class HEWorker(QObject):
             self.sig_output.emit(
                 file_id, '\n####### Error running FFprobe #######\n')
             self.sig_output.emit(
-                file_id, 'Error message: {}\n\n\n'.format(err))
-        except KeyError:
+                file_id, f'Error message: {err}\n\n\n')
+        except KeyError as err:
             self.sig_output.emit(
                 file_id, '\n####### Error running FFprobe #######\n')
             self.sig_output.emit(
-                file_id, 'Key error accessing returned data\n\n\n')
+                file_id, f'Key error accessing returned data: {err}\n\n\n')
 
-        self.sig_error.emit(
-                file_id, f'Error getting video metadata')
+        self.sig_error.emit(file_id, 'Error getting video metadata')
         return 1
 
     def make_display_video(self, fileinfo, notes):
@@ -393,9 +391,8 @@ class HEWorker(QObject):
         experiment with a neural network-based feature detector in the future,
         which would need a fixed input dimension.
 
-        Also OpenCV's support for codecs is limited but it supports H.264/mp4
-        on every platform tested, so transcoding allows us to process a much
-        wider variety of input formats.
+        Also OpenCV's support for codecs may be more limited than FFmpeg's, so
+        transcoding allows us to process any video format FFmpeg can read.
 
         Lastly we want to ensure the input to the video scanner is video with
         square pixels. Some source video uses non-square pixels so we use
@@ -440,7 +437,7 @@ class HEWorker(QObject):
 
     def run_ffmpeg(self, args, file_id):
         """
-        Run FFmpeg to do video conversion in the background.
+        Run FFmpeg to do video transcoding.
 
         Args:
             args(list):
