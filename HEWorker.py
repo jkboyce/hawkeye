@@ -10,6 +10,7 @@ import io
 import time
 import subprocess
 import platform
+import json
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
@@ -124,15 +125,18 @@ class HEWorker(QObject):
                 os.remove(notes_path)
 
         if need_notes and not self.abort():
-            scanvid_path = fileinfo['scanvid_path']
-            scanner = HEVideoScanner(file_path, scanvideo=scanvid_path)
+            scanner = HEVideoScanner(file_path,
+                                     scanvideo=fileinfo['scanvid_path'])
             notes = scanner.notes
 
-            # do the first step of scanning, which gets the video metadata
-            # we need to make the display video
+            if self.get_video_metadata(fileinfo, notes) != 0:
+                return
+            """
+            alternate for line above:
             if self.run_scanner(fileinfo, scanner, steps=(1, 1),
                                 writenotes=False) != 0:
                 return
+            """
 
         if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
@@ -181,52 +185,110 @@ class HEWorker(QObject):
         result['csvfile_path'] = csvfile_path
         return result
 
-    def run_scanner(self, fileinfo, scanner, steps, writenotes):
+    def get_video_metadata(self, fileinfo, notes):
         """
-        Run the video scanner. Capture stdout and send the output to our UI.
+        Run FFprobe to get the source video metadata. In particular we need:
+
+        1. width in pixels (int)
+        2. height in pixels (int)
+        3. frames per second (float)
+        4. frame count (int)
+
+        This function replaces Step 1 in HEVideoScanner, which gets this data
+        using OpenCV. We use FFprobe here because it can analyze a wider
+        variety of input formats. In this way all OpenCV processing is done on
+        the video we create in make_scan_video() below.
 
         Returns 0 on success, 1 on failure.
         """
         file_id = fileinfo['file_id']
-        hawkeye_dir = fileinfo['hawkeye_dir']
+        file_path = fileinfo['file_path']
 
-        # Install our own output handler at sys.stdout to capture printed text
-        # from the scanner and send it to our UI thread.
-        def output_callback(s):
-            self.sig_output.emit(file_id, s)
-        sys.stdout = HEOutputHandler(callback=output_callback)
+        self.sig_output.emit(file_id, 'Getting metadata for video {}...\n\n'
+                                      .format(notes['source']))
 
-        # Define a callback function to pass in to HEVideoScanner.process()
-        # below. Processing takes a long time (seconds to minutes) and the
-        # scanner will call this function at irregular intervals.
-        def processing_callback(step=0, maxsteps=0):
-            # so UI thread can update progress bar:
-            self.sig_progress.emit(file_id, step, maxsteps)
-            if self.abort():
-                # raise exception to bail us out of whereever we are in
-                # processing:
-                raise HEAbortException()
+        if getattr(sys, 'frozen', False):
+            # running in a bundle
+            ffprobe_dir = sys._MEIPASS
+        else:
+            # running in a normal Python environment
+            if platform.system() == 'Windows':
+                ffprobe_dir = os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)),
+                        'packaging\\windows')
+            elif platform.system() == 'Darwin':
+                ffprobe_dir = os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)),
+                        'packaging/osx')
+            elif platform.system() == 'Linux':
+                ffprobe_dir = '/usr/local/bin'   # fill this in JKB
+        ffprobe_executable = os.path.join(ffprobe_dir, 'ffprobe')
+
+        args = ['-v', 'error', '-of', 'json', '-select_streams', 'v:0',
+                '-show_streams', '-i', file_path]
+        args = [ffprobe_executable] + args
+
+        message = 'Running FFprobe with arguments:\n{}\n'.format(
+                ' '.join(args))
+        self.sig_output.emit(file_id, message)
 
         try:
-            scanner.process(steps=steps,
-                            writenotes=writenotes, notesdir=hawkeye_dir,
-                            callback=processing_callback, verbosity=2)
-        except HEScanException as err:
-            self.sig_output.emit(file_id,
-                                 '\n####### Error during scanning #######\n')
-            self.sig_output.emit(file_id,
-                                 "Error message: {}\n\n\n".format(err))
-            self.sig_error.emit(file_id, f'Error: {err}')
-            return 1
-        except HEAbortException:
-            # worker thread got an abort signal during processing
-            return 1
-        finally:
-            sys.stdout.close()
-            sys.stdout = sys.__stdout__
+            p = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT)
+            outputhandler = io.TextIOWrapper(p.stdout, encoding='utf-8')
+            output = ''
 
-        self.sig_output.emit(file_id, '\n')
-        return 0
+            while p.poll() is None:
+                time.sleep(0.1)
+                for line in outputhandler:
+                    output += line
+                    if self.abort():
+                        p.terminate()
+                        return 1
+
+            parsed_output = json.loads(output)
+            video_metadata = parsed_output['streams'][0]
+
+            width = int(video_metadata['width'])
+            height = int(video_metadata['height'])
+            framecount = int(video_metadata['nb_frames'])
+
+            # the fps result can either be in numeric form like '30' or
+            # '59.94', or in rational form like '60000/1001'. In any case we
+            # want fps as a float.
+            fps_raw = str(video_metadata['avg_frame_rate'])
+            if '/' in fps_raw:
+                fps_parts = fps_raw.split('/')
+                fps = float(fps_parts[0]) / float(fps_parts[1])
+            else:
+                fps = float(fps_raw)
+
+            self.sig_output.emit(file_id,
+                                 f'width = {width}, height = {height}\n')
+            self.sig_output.emit(file_id, f'fps = {fps_raw} = {fps}\n')
+            self.sig_output.emit(file_id, f'frame count = {framecount}\n')
+
+            results = f'FFprobe process ended, return code {p.returncode}\n\n'
+            self.sig_output.emit(file_id, results)
+
+            # fill in the same notes fields as HEVideoScanner's step 1
+            notes['fps'] = fps
+            notes['frame_width'] = width
+            notes['frame_height'] = height
+            notes['frame_count_estimate'] = framecount
+
+            return 0
+        except subprocess.SubprocessError as err:
+            self.sig_output.emit(
+                file_id, '\n####### Error running FFprobe #######\n')
+            self.sig_output.emit(
+                file_id, 'Error message: {}\n\n\n'.format(err))
+        except KeyError:
+            self.sig_output.emit(
+                file_id, '\n####### Error running FFprobe #######\n')
+            self.sig_output.emit(
+                file_id, 'Key error accessing returned data\n\n\n')
+        return 1
 
     def make_display_video(self, fileinfo, notes):
         """
@@ -272,21 +334,19 @@ class HEWorker(QObject):
             # FFmpeg args for native resolution
             args = ['-f', 'lavfi',
                     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-                    '-i', file_path, '-shortest', '-c:v', 'libx264',
-                    '-preset', 'veryfast', '-tune', 'fastdecode', '-crf',
-                    '20', '-vf', 'format=yuv420p', '-x264-params',
-                    'keyint=1', '-c:a', 'aac', '-map', '0:a', '-map', '1:v',
-                    displayvid_path]
+                    '-i', file_path, '-shortest', '-c:v', 'libx264', '-preset',
+                    'veryfast', '-tune', 'fastdecode', '-crf', '20', '-vf',
+                    'format=yuv420p', '-x264-params', 'keyint=1', '-c:a',
+                    'aac', '-map', '0:a', '-map', '1:v', displayvid_path]
         else:
             # reduced resolution
             args = ['-f', 'lavfi',
                     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-                    '-i', file_path, '-shortest', '-c:v', 'libx264',
-                    '-preset', 'veryfast', '-tune', 'fastdecode', '-crf',
-                    '20', '-vf', 'scale=-2:' + str(displayvid_resolution) +
-                    ',format=yuv420p', '-x264-params',
-                    'keyint=1', '-c:a', 'aac', '-map', '0:a', '-map', '1:v',
-                    displayvid_path]
+                    '-i', file_path, '-shortest', '-c:v', 'libx264', '-preset',
+                    'veryfast', '-tune', 'fastdecode', '-crf', '20', '-vf',
+                    'scale=-2:' + str(displayvid_resolution)
+                    + ',format=yuv420p', '-x264-params', 'keyint=1', '-c:a',
+                    'aac', '-map', '0:a', '-map', '1:v', displayvid_path]
 
         retcode = self.run_ffmpeg(args, file_id)
 
@@ -324,10 +384,9 @@ class HEWorker(QObject):
         scanvid_path = fileinfo['scanvid_path']
 
         if not os.path.isfile(scanvid_path):
-            args = ['-i', file_path, '-c:v', 'libx264', '-crf', '20', '-vf',
-                    'scale=-1:480,crop=min(iw\\,640):480,'
-                    'pad=640:480:(ow-iw)/2:0,setsar=1',
-                    '-an', scanvid_path]
+            args = ['-hide_banner', '-i', file_path, '-c:v', 'libx264', '-crf',
+                    '20', '-vf', 'scale=-1:480,crop=min(iw\\,640):480,'
+                    'pad=640:480:(ow-iw)/2:0,setsar=1', '-an', scanvid_path]
             retcode = self.run_ffmpeg(args, file_id)
 
             if retcode != 0 or self.abort():
@@ -405,6 +464,53 @@ class HEWorker(QObject):
             self.sig_output.emit(
                 file_id, "Error message: {}\n\n\n".format(err))
         return 1
+
+    def run_scanner(self, fileinfo, scanner, steps, writenotes):
+        """
+        Run the video scanner. Capture stdout and send the output to our UI.
+
+        Returns 0 on success, 1 on failure.
+        """
+        file_id = fileinfo['file_id']
+        hawkeye_dir = fileinfo['hawkeye_dir']
+
+        # Install our own output handler at sys.stdout to capture printed text
+        # from the scanner and send it to our UI thread.
+        def output_callback(s):
+            self.sig_output.emit(file_id, s)
+        sys.stdout = HEOutputHandler(callback=output_callback)
+
+        # Define a callback function to pass in to HEVideoScanner.process()
+        # below. Processing takes a long time (seconds to minutes) and the
+        # scanner will call this function at irregular intervals.
+        def processing_callback(step=0, maxsteps=0):
+            # so UI thread can update progress bar:
+            self.sig_progress.emit(file_id, step, maxsteps)
+            if self.abort():
+                # raise exception to bail us out of whereever we are in
+                # processing:
+                raise HEAbortException()
+
+        try:
+            scanner.process(steps=steps,
+                            writenotes=writenotes, notesdir=hawkeye_dir,
+                            callback=processing_callback, verbosity=2)
+        except HEScanException as err:
+            self.sig_output.emit(file_id,
+                                 '\n####### Error during scanning #######\n')
+            self.sig_output.emit(file_id,
+                                 "Error message: {}\n\n\n".format(err))
+            self.sig_error.emit(file_id, f'Error: {err}')
+            return 1
+        except HEAbortException:
+            # worker thread got an abort signal during processing
+            return 1
+        finally:
+            sys.stdout.close()
+            sys.stdout = sys.__stdout__
+
+        self.sig_output.emit(file_id, '\n')
+        return 0
 
     @Slot(dict)
     def on_new_prefs(self, prefs: dict):
