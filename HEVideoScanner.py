@@ -1540,22 +1540,20 @@ class HEVideoScanner:
                     nearby_tags.extend(notes['meas'][frame])
 
                 if len(nearby_tags) > 0:
-                    """
-                    y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
-                    y_max = median([t.y for t in y_sorted_tags[-5:]])
                     x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
                     x_min = median([t.x for t in x_sorted_tags[:5]])
                     x_max = median([t.x for t in x_sorted_tags[-5:]])
 
-                    w = 0.7 * (x_max - x_min)
-                    h = 0.8 * w
-                    x, y = 0.5 * (x_min + x_max - w), y_max - h
-                    """
-                    x, y, w, h, _ = last_torso
-                    x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
-                    x_min = median([t.x for t in x_sorted_tags[:5]])
-                    x_max = median([t.x for t in x_sorted_tags[-5:]])
-                    x = 0.5 * (x_min + x_max - w)
+                    if last_torso is not None:
+                        _, y, w, h, _ = last_torso
+                        x = 0.5 * (x_min + x_max - w)
+                    else:
+                        y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
+                        y_max = median([t.y for t in y_sorted_tags[-5:]])
+
+                        w = 0.7 * (x_max - x_min)   # make educated guesses
+                        h = 0.8 * w
+                        x, y = 0.5 * (x_min + x_max - w), y_max - h
 
                     notes['body'][framenum] = (x, y, w, h, False)
                     # print(f'added torso to frame {framenum}')
@@ -2322,8 +2320,9 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                                int(round(tag.radius)), color, 1)
 
             for arc in arcs:
-                if notes['step'] < 3:
+                if notes['step'] < 5:
                     start, end = arc.get_frame_range(notes)
+                    print('start = {}, end = {}'.format(start, end))
                 else:
                     start, end = arc.f_throw, arc.f_catch
                 if start <= framenum <= end:
@@ -2406,25 +2405,27 @@ testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
-    # _filename = 'movies/juggling_test_5.mov'
-    _filename = 'movies/TBTB3_9balls.mov'
+    _filename = 'movies/juggling_test_5.mov'
+    # _filename = 'movies/TBTB3_9balls.mov'
     # _filename = 'movies/GOPR0463.MP4'
     # _filename = 'movies/GOPR0466.MP4'
     # _filename = 'movies/GOPR0467.MP4'
     # _filename = 'movies/GOPR0493.MP4'
     # _filename = 'movies/8ballsLonger.mov'
     # _filename = 'movies/vert_test.mp4'
-    _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/GOPR0531_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/vert_test_640x480.mp4'
 
     watch_video = False
 
     # print(cv2.getBuildInformation())
 
     if watch_video:
-        notes_step = 5
-        start_frame = 700
+        notes_step = 4
+        start_frame = 0
 
         if 1 <= notes_step <= 5:
             _filepath = os.path.abspath(_filename)
