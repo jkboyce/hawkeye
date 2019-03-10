@@ -235,8 +235,15 @@ class HEWorker(QObject):
         self.sig_output.emit(file_id, message)
 
         try:
+            kwargs = {}
+            if platform.system() == 'Windows':
+                # Python 3.7:
+                # CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+                CREATE_NO_WINDOW = 0x08000000
+                kwargs['creationflags'] = CREATE_NO_WINDOW
+
             p = subprocess.Popen(args, stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT)
+                                 stderr=subprocess.STDOUT, **kwargs)
             outputhandler = io.TextIOWrapper(p.stdout, encoding='utf-8')
             output = ''
 
@@ -472,8 +479,15 @@ class HEWorker(QObject):
         self.sig_output.emit(file_id, message)
 
         try:
+            kwargs = {}
+            if platform.system() == 'Windows':
+                # Python 3.7:
+                # CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+                CREATE_NO_WINDOW = 0x08000000
+                kwargs['creationflags'] = CREATE_NO_WINDOW
+
             p = subprocess.Popen(args, stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT)
+                                 stderr=subprocess.STDOUT, **kwargs)
             outputhandler = io.TextIOWrapper(p.stdout, encoding='utf-8')
 
             while p.poll() is None:
@@ -513,9 +527,20 @@ class HEWorker(QObject):
         # Define a callback function to pass in to HEVideoScanner.process()
         # below. Processing takes a long time (seconds to minutes) and the
         # scanner will call this function at irregular intervals.
+
         def processing_callback(step=0, maxsteps=0):
             # so UI thread can update progress bar:
             self.sig_progress.emit(file_id, step, maxsteps)
+
+            # Release the GIL periodically so that video drawing operations
+            # don't get blocked for too long during processing. HEVideoScanner's
+            # step 2 isn't a problem because most of that time is spent in
+            # OpenCV so the GIL is mostly free. Steps 3+ though are all Python
+            # code (and those also happen to correspond to maxsteps==0), so we
+            # periodically sleep during those steps.
+            if maxsteps == 0: 
+                time.sleep(0.001)
+
             if self.abort():
                 # raise exception to bail us out of whereever we are in
                 # processing:

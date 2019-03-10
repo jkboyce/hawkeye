@@ -1352,10 +1352,10 @@ class HEVideoScanner:
                         cause = 'unknown reason'
                     print('  removed arc {} starting at frame {}: {}'.format(
                             arc.id_, f_min, cause))
-                return True
 
-            if self._callback is not None:
-                self._callback()
+                if self._callback is not None:
+                    self._callback()
+                return True
 
         return False
 
@@ -1403,8 +1403,8 @@ class HEVideoScanner:
                         arc.done = False
                     tags_removed += 1
 
-                if self._callback is not None:
-                    self._callback()
+            if self._callback is not None:
+                self._callback()
 
             arcs_to_kill = []
             keep_cleaning = False
@@ -1513,6 +1513,9 @@ class HEVideoScanner:
             # self.analyze_throw_errors(run_dict)
 
             notes['run'].append(run_dict)
+
+            if self._callback is not None:
+                self._callback()
 
         if self._verbosity >= 2:
             print('--------------------------------------------')
