@@ -533,12 +533,12 @@ class HEWorker(QObject):
             self.sig_progress.emit(file_id, step, maxsteps)
 
             # Release the GIL periodically so that video drawing operations
-            # don't get blocked for too long during processing. HEVideoScanner's
-            # step 2 isn't a problem because most of that time is spent in
-            # OpenCV so the GIL is mostly free. Steps 3+ though are all Python
-            # code (and those also happen to correspond to maxsteps==0), so we
-            # periodically sleep during those steps.
-            if maxsteps == 0: 
+            # don't get blocked for too long during processing.
+            # HEVideoScanner's step 2 isn't a problem because most of that time
+            # is spent in OpenCV so the GIL is mostly free. Steps 3+ though are
+            # all Python code (and those also happen to correspond to
+            # maxsteps==0), so we periodically sleep during those steps.
+            if maxsteps == 0:
                 time.sleep(0.001)
 
             if self.abort():
