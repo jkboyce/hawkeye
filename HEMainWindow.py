@@ -1185,7 +1185,14 @@ class HEMainWindow(QMainWindow):
         if vc.notes is None:
             return
         framenum = min(max(0, framenum), vc.frames - 1)
-        vc.player.setPosition(positionForFramenum(vc, framenum))
+        position = positionForFramenum(vc, framenum)
+        vc.player.setPosition(position)
+
+        # Update slider position. The media player doesn't always signal
+        # positionChanged() while playback is paused.
+        prev = self.positionSlider.blockSignals(True)
+        self.positionSlider.setValue(position)
+        self.positionSlider.blockSignals(prev)
 
     def pauseMovie(self):
         """
