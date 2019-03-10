@@ -204,7 +204,7 @@ class HEWorker(QObject):
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
 
-        self.sig_output.emit(file_id, 'Getting metadata for video {}...\n\n'
+        self.sig_output.emit(file_id, 'Getting metadata for video {}...\n'
                                       .format(notes['source']))
 
         if getattr(sys, 'frozen', False):
@@ -228,7 +228,7 @@ class HEWorker(QObject):
                 '-show_streams', '-i', file_path]
         args = [ffprobe_executable] + args
 
-        message = 'Running FFprobe with arguments:\n{}\n'.format(
+        message = 'Running FFprobe with arguments:\n{}\n\n'.format(
                 ' '.join(args))
         self.sig_output.emit(file_id, message)
 
@@ -249,22 +249,34 @@ class HEWorker(QObject):
             parsed_output = json.loads(output)
             video_metadata = parsed_output['streams'][0]
 
-            width = int(video_metadata['width'])
+            width_orig = int(video_metadata['width'])
             height = int(video_metadata['height'])
             framecount = int(video_metadata['nb_frames'])
+            fps_raw = str(video_metadata['avg_frame_rate'])
+            dar = video_metadata['display_aspect_ratio']
+
+            # The input video might have non-square pixels, which is a problem
+            # for us in the visual analysis. So we will use FFmpeg's scaler to
+            # create scan and display videos with square pixels (i.e. SAR=1:1).
+            # Here we use the DAR to calculate what the pixel width will be
+            # when we scale to square pixels.
+            dar_parts = dar.split(':')
+            width = height * int(dar_parts[0]) // int(dar_parts[1])
 
             # the fps result can either be in numeric form like '30' or
             # '59.94', or in rational form like '60000/1001'. In any case we
             # want fps as a float.
-            fps_raw = str(video_metadata['avg_frame_rate'])
             if '/' in fps_raw:
                 fps_parts = fps_raw.split('/')
                 fps = float(fps_parts[0]) / float(fps_parts[1])
             else:
                 fps = float(fps_raw)
 
-            self.sig_output.emit(file_id,
-                                 f'width = {width}, height = {height}\n')
+            self.sig_output.emit(file_id, f'height = {height}\n')
+            self.sig_output.emit(
+                    file_id,
+                    f'width = {width_orig}, '
+                    f'scaling to width = {width} (DAR = {dar})\n')
             self.sig_output.emit(file_id, f'fps = {fps_raw} = {fps}\n')
             self.sig_output.emit(file_id, f'frame count = {framecount}\n')
 
@@ -293,7 +305,7 @@ class HEWorker(QObject):
     def make_display_video(self, fileinfo, notes):
         """
         The video we display in the UI is not the original video, but a version
-        transcoded with FFmpeg. We transcode for four reasons:
+        transcoded with FFmpeg. We transcode for five reasons:
 
         1. The video player can't smoothly step backward a frame at a time
            unless every frame is coded as a keyframe. This is rarely the case
@@ -336,17 +348,19 @@ class HEWorker(QObject):
                     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
                     '-i', file_path, '-shortest', '-c:v', 'libx264', '-preset',
                     'veryfast', '-tune', 'fastdecode', '-crf', '20', '-vf',
-                    'format=yuv420p', '-x264-params', 'keyint=1', '-c:a',
-                    'aac', '-map', '0:a', '-map', '1:v', displayvid_path]
+                    'scale=trunc(ih*dar):ih,setsar=1,format=yuv420p',
+                    '-x264-params', 'keyint=1', '-c:a', 'aac', '-map', '0:a',
+                    '-map', '1:v', displayvid_path]
         else:
             # reduced resolution
             args = ['-f', 'lavfi',
                     '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
                     '-i', file_path, '-shortest', '-c:v', 'libx264', '-preset',
                     'veryfast', '-tune', 'fastdecode', '-crf', '20', '-vf',
-                    'scale=-2:' + str(displayvid_resolution)
-                    + ',format=yuv420p', '-x264-params', 'keyint=1', '-c:a',
-                    'aac', '-map', '0:a', '-map', '1:v', displayvid_path]
+                    'scale=trunc(ih*dar):ih,scale=-2:'
+                    + str(displayvid_resolution) + ',setsar=1,format=yuv420p',
+                    '-x264-params', 'keyint=1', '-c:a', 'aac', '-map', '0:a',
+                    '-map', '1:v', displayvid_path]
 
         retcode = self.run_ffmpeg(args, file_id)
 
@@ -377,6 +391,10 @@ class HEWorker(QObject):
         on every platform tested, so transcoding allows us to process a much
         wider variety of input formats.
 
+        Lastly we want to ensure the input to the video scanner is video with
+        square pixels. Some source video uses non-square pixels so we use
+        FFmpeg's scaler to transform it.
+
         Returns 0 on success, 1 on failure.
         """
         file_id = fileinfo['file_id']
@@ -384,9 +402,18 @@ class HEWorker(QObject):
         scanvid_path = fileinfo['scanvid_path']
 
         if not os.path.isfile(scanvid_path):
-            args = ['-hide_banner', '-i', file_path, '-c:v', 'libx264', '-crf',
-                    '20', '-vf', 'scale=-1:480,crop=min(iw\\,640):480,'
-                    'pad=640:480:(ow-iw)/2:0,setsar=1', '-an', scanvid_path]
+            args = ['-hide_banner',
+                    '-i', file_path,
+                    '-c:v', 'libx264',          # encode with libx264 (H.264)
+                    '-crf', '20',               # quality factor (high)
+                    '-vf',                      # video filters:
+                    'scale=trunc(ih*dar):ih,'   # scale to square pixels
+                    'scale=-1:480,'             # scale to height 480
+                    'crop=min(iw\\,640):480,'   # crop to width 640, if needed
+                    'pad=640:480:(ow-iw)/2:0,'  # pad to width 640, if needed
+                    'setsar=1',                 # set SAR=1:1 (square pixels)
+                    '-an',                      # no audio
+                    scanvid_path]
             retcode = self.run_ffmpeg(args, file_id)
 
             if retcode != 0 or self.abort():
