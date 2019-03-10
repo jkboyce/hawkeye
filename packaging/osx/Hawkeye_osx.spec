@@ -8,6 +8,7 @@ hawkeye_root = os.path.abspath(os.path.join(SPECPATH, '../..'))
 a = Analysis(['../../Hawkeye.py'],
              pathex=[hawkeye_root],
              binaries=[('ffmpeg', '.'),
+                       ('ffprobe', '.'),
                        ('libavdevice.57.dylib', '.'),
                        ('libavfilter.6.dylib', '.'),
                        ('libpostproc.54.dylib', '.'),
