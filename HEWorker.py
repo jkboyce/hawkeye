@@ -311,7 +311,7 @@ class HEWorker(QObject):
     def make_display_video(self, fileinfo, notes):
         """
         The video we display in the UI is not the original video, but a version
-        transcoded with FFmpeg. We transcode for five reasons:
+        transcoded with FFmpeg. We transcode for four reasons:
 
         1. The video player can't smoothly step backward a frame at a time
            unless every frame is coded as a keyframe. This is rarely the case

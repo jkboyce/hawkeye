@@ -276,8 +276,7 @@ class HEVideoScanner:
         notes = self.notes
 
         if self._verbosity >= 1:
-            print('Object detection starting on video {}'.format(
-                notes['source']))
+            print('Object detection starting...')
 
         if display:
             cv2.namedWindow('Frame')
@@ -290,20 +289,26 @@ class HEVideoScanner:
 
         if scanvideo is None:
             # no substitute scan video provided
+            if self._verbosity >= 2:
+                print('Scanning from video {}'.format(notes['source']))
+
             cap = cv2.VideoCapture(notes['source'])
             if not cap.isOpened():
                 raise HEScanException("Error opening video file {}".format(
                     notes['source']))
+
             scan_framewidth, scan_frameheight = framewidth, frameheight
         else:
+            if self._verbosity >= 2:
+                print(f'Scanning from video {scanvideo}')
+
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
-                raise HEScanException("Error opening video file {}".format(
-                    notes['source']))
+                raise HEScanException(f'Error opening video file {scanvideo}')
+
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             if self._verbosity >= 2:
-                print(f'Switching to transcoded video {scanvideo}')
                 print('width = {}, height = {}'.format(
                     scan_framewidth, scan_frameheight))
 
