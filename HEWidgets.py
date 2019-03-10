@@ -418,9 +418,8 @@ class HEVideoContext(QObject):
     Class to hold all the data for an individual video. It also has its own
     instance of QMediaPlayer.
 
-    We initially tried a solution with a single app-wide QMediaPlayer instance
-    where we swapped out the media on each switch between videos, but it was
-    never reliable.
+    We first tried a single app-wide QMediaPlayer instance where we swapped out
+    the media on each switch between videos, but it was never reliable.
     """
     def __init__(self, main_window, filepath):
         super().__init__(parent=main_window)

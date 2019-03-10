@@ -103,7 +103,7 @@ class HEWorker(QObject):
         hawkeye_dir = fileinfo['hawkeye_dir']
         if not os.path.exists(hawkeye_dir):
             self.sig_output.emit(file_id,
-                                 f'Creating directory {hawkeye_dir}\n')
+                                 f'Creating directory {hawkeye_dir}\n\n')
             os.makedirs(hawkeye_dir)
             if not os.path.exists(hawkeye_dir):
                 self.sig_output.emit(
@@ -121,7 +121,8 @@ class HEWorker(QObject):
                 need_notes = False
             else:
                 # old version of notes file -> delete and create a new one
-                self.sig_output.emit(file_id, 'Notes file is old...deleting\n')
+                self.sig_output.emit(file_id,
+                                     'Notes file is old...deleting\n\n')
                 os.remove(notes_path)
 
         if need_notes and not self.abort():
