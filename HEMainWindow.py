@@ -557,6 +557,9 @@ class HEMainWindow(QMainWindow):
                     item.vc.position = 0
                     item.vc.has_played = False
 
+                    # Define a function that maps an (x, y) pixel position in
+                    # the original video to the equivalent position in the
+                    # display video. See HEVideoView.draw_overlays().
                     if item.vc.videoresolution == 0:
                         def mapToDisplayVideo(x, y):
                             return x, y
@@ -573,7 +576,6 @@ class HEMainWindow(QMainWindow):
                             new_x = x * display_width / orig_width
                             new_y = y * display_height / orig_height
                             return new_x, new_y
-
                     item.vc.map = mapToDisplayVideo
 
                     item.vc.player.pause()
