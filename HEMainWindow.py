@@ -556,6 +556,25 @@ class HEMainWindow(QMainWindow):
                     item.vc.position = 0
                     item.vc.has_played = False
 
+                    if item.vc.videoresolution == 0:
+                        def mapToDisplayVideo(x, y):
+                            return x, y
+                    else:
+                        orig_height = notes['frame_height']
+                        orig_width = notes['frame_width']
+                        display_height = item.vc.videoresolution
+                        display_width = round(orig_width * display_height
+                                              / orig_height)
+                        if display_width % 2 == 1:
+                            display_width += 1
+
+                        def mapToDisplayVideo(x, y):
+                            new_x = x * display_width / orig_width
+                            new_y = y * display_height / orig_height
+                            return new_x, new_y
+
+                    item.vc.map = mapToDisplayVideo
+
                     item.vc.player.pause()
                     item.vc.player.setMedia(QMediaContent(
                             QUrl.fromLocalFile(item.vc.videopath)))
