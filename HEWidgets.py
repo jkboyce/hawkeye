@@ -107,6 +107,8 @@ class HEVideoView(QGraphicsView):
         notes = self.window.currentVideoItem.vc.notes
         if notes is None or notes['step'] < 5:
             return
+        if not self.window.currentVideoItem.vc.overlays:
+            return
 
         """
         Before we needed the following but it seems to be working now...
@@ -475,6 +477,7 @@ class HEVideoContext(QObject):
         self.processing_steps_total = 0
         self.has_played = False         # see note in HEMainWindow.playMovie()
         self.map = None         # see HEMainWindow.on_worker_displayvid_done()
+        self.overlays = True            # whether to draw video overlays
 
     def mediaStateChanged(self, state):
         """

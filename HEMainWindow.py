@@ -391,8 +391,9 @@ class HEMainWindow(QMainWindow):
                '<p>Useful keyboard shortcuts when viewing video:</p>'
                '<ul>'
                '<li>space: toggle play/pause</li>'
-               '<li>arrow keys: step forward/backward by one frame (hold to '
-               'continue cueing)</li>'
+               '<li>up/down: toggle overlays</li>'
+               '<li>left/right: step backward/forward by one frame '
+               '(hold to continue cueing)</li>'
                '<li>z, x: step backward/forward by one throw</li>'
                '<li>a, s: step backward/forward by one run</li>'
                '</ul>'
@@ -1313,6 +1314,9 @@ class HEMainWindow(QMainWindow):
                 self.stepBackward()     # see note above on step forward
             else:
                 self.stepBackwardUntil = framenum - 2
+        elif key == Qt.Key_Up or key == Qt.Key_Down:
+            if notes is not None and notes['step'] >= 5:
+                vc.overlays = not vc.overlays
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if notes is None or 'arcs' not in notes or 'run' not in notes:
