@@ -1256,6 +1256,22 @@ class HEMainWindow(QMainWindow):
             # on both Mac and Windows.)
             vc.has_played = True
 
+    def repaintPlayer(self):
+        """
+        If the player is paused then force a repaint of the player. This is
+        only necessary on Windows; the Mac OS player continuously repaints even
+        when paused.
+        """
+        if platform.system() == 'Windows':
+            if self.currentVideoItem is None:
+                return
+            if (self.currentVideoItem.vc.player.state()
+                    != QMediaPlayer.PlayingState):
+                # this is a hack but I haven't found any other method that
+                # works, including self.view.repaint()
+                self.playMovie()
+                self.pauseMovie()
+
     # -------------------------------------------------------------------------
     #  QMainWindow overrides
     # -------------------------------------------------------------------------
@@ -1317,6 +1333,7 @@ class HEMainWindow(QMainWindow):
         elif key == Qt.Key_Up or key == Qt.Key_Down:
             if notes is not None and notes['step'] >= 5:
                 vc.overlays = not vc.overlays
+                self.repaintPlayer()
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if notes is None or 'arcs' not in notes or 'run' not in notes:
