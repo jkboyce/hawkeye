@@ -32,15 +32,15 @@ class HEVideoView(QGraphicsView):
         """
         Called from paintEvent().
 
-        Adjust UI elements as needed, and perform aspects of playback control
-        that we want to be frame-accurate.
+        Adjust UI elements as needed during playback, and perform aspects of
+        playback control that we want to be frame-accurate.
         """
         win = self.window
         videoitem = win.currentVideoItem
         player = videoitem.vc.player
         frames_total = videoitem.vc.frames
 
-        # check if we're at the beginning or end of the movie and adjust
+        # check if we're at the beginning or end of the video and adjust
         # UI elements as appropriate
         if framenum == 0:
             win.backButton.setEnabled(False)
@@ -59,7 +59,7 @@ class HEVideoView(QGraphicsView):
             win.forwardButton.setEnabled(can_step)
             win.playButton.setEnabled(True)
 
-        # keep selected run in viewlist synchronized with position in movie
+        # keep selected run in viewlist synchronized with position in video
         vl = win.viewList
         for i in range(vl.count()):
             viewitem = vl.item(i)
@@ -306,7 +306,7 @@ class HEVideoView(QGraphicsView):
 
     def mapToView(self, x, y):
         """
-        Map coordinate from movie coordinates (pixels) to view coordinates
+        Map from video coordinates (pixels) to view coordinates
         """
         movie_coord = QPointF(x, y)
         graphicsvideoitem = self.window.currentVideoItem.vc.graphicsvideoitem
