@@ -8,3 +8,4 @@ packaging/osx/dist/
 packaging/osx/DropDMG.app
 packaging/windows/build/
 packaging/windows/dist/
+packaging/windows/Output/
