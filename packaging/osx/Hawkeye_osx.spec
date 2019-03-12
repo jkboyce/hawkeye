@@ -37,19 +37,15 @@ exe = EXE(pyz,
           console=False )
 
 # Files that Pyinstaller's dependency checker pulls in but aren't needed, so
-# remove them from the build.
+# remove them from the build. These total 367 MB.
 
 Hawkeye_excludes = [
                 'libmkl_avx.dylib',
-                'libmkl_avx2.dylib',
                 'libmkl_avx512.dylib',
                 'libmkl_blacs_mpich_ilp64.dylib',
                 'libmkl_blacs_mpich_lp64.dylib',
                 'libmkl_cdft_core.dylib',
-                'libmkl_core.dylib',
                 'libmkl_intel_ilp64.dylib',
-                'libmkl_intel_lp64.dylib',
-                'libmkl_intel_thread.dylib',
                 'libmkl_mc.dylib',
                 'libmkl_mc3.dylib',
                 'libmkl_scalapack_ilp64.dylib',
