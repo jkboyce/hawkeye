@@ -40,6 +40,16 @@ class HEVideoView(QGraphicsView):
         player = videoitem.vc.player
         frames_total = videoitem.vc.frames
 
+        # record position in movie
+        videoitem.vc.position = player.position()
+
+        # update position of slider. This is supposed to happen in
+        # HEVideoContext.positionChanged(), but on certain platforms
+        # QMediaPlayer doesn't signal positionChanged() so do it here also.
+        prev = win.positionSlider.blockSignals(True)
+        win.positionSlider.setValue(videoitem.vc.position)
+        win.positionSlider.blockSignals(prev)
+
         # check if we're at the beginning or end of the video and adjust
         # UI elements as appropriate
         if framenum == 0:
@@ -331,10 +341,6 @@ class HEVideoView(QGraphicsView):
         if videoitem is None:
             return
 
-        # record position in movie
-        videoitem.vc.position = videoitem.vc.player.position()
-
-        # decide if we should do anything else
         moviestatus = videoitem.vc.player.mediaStatus()
         if (moviestatus != QMediaPlayer.BufferedMedia and
                 moviestatus != QMediaPlayer.BufferingMedia and
