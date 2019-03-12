@@ -27,6 +27,8 @@ At a high level our approach is:
 - Piece together nearby (in space and time) events into preliminary parabolic tracks.
 - Optimize those parabolic tracks using the Expectation Maximization (EM) algorithm. This alternates between calculating weights for each event's affiliation with each arc (E step), and weighted least-squares fitting to refine the parabolas (M step). We merge and prune out bad arcs as we go. This is loosely based on Ribnick et al's algorithm (reference below) but we get higher reliability than their published numbers by doing more preprocessing before applying the EM algorithm.
 
+A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm to help generate training data. Such a network may be able to operate in close to real time, which would enable a number of interesting applications.
+
 ### References
 - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal Processing Magazine, vol. 13, no. 6, pp. 47–60, November 1996.
 - Ribnick, E. et al, "Detection of Thrown Objects in Indoor and Outdoor Scenes", Proceedings of the 2007 IEEE/RSJ International Conference on Intelligent Robots and Systems, IROS 2007.
