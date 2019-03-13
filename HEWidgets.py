@@ -433,7 +433,7 @@ class HEVideoList(QListWidget):
 
         self.addItem(item)
 
-        self.window.sig_new_work.emit(filepath)
+        self.window.sig_process_video.emit(filepath)
         self.window.worker_queue_length += 1
         return item
 

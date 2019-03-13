@@ -29,6 +29,9 @@ class HEWorker(QObject):
     thread, so that the user can view the video while scanning is still
     underway.
 
+    The worker also handles requests to extract a clip from a source video.
+    See on_extract_clip().
+
     We put this worker in a separate QObject and use signals and slots to
     communicate with it, so that we can do these time-consuming operations on a
     thread separate from the main event loop. The signal/slot mechanism is a
@@ -70,19 +73,20 @@ class HEWorker(QObject):
         self._resolution = 0
         self._abort = False
 
-    def abort(self):
+    @Slot(dict)
+    def on_new_prefs(self, prefs: dict):
         """
-        Return True if the user is trying to quit the app.
+        This slot gets signaled when there is a change to the display
+        preferences for output videos. The worker uses these preferences to
+        create a video with the given vertical pixel dimension.
         """
-        if self._abort:
-            return True
-        self._abort = QThread.currentThread().isInterruptionRequested()
-        if self._abort:
-            QThread.currentThread().quit()      # stop thread's event loop
-        return self._abort
+        if prefs['resolution'] == 'Actual size':
+            self._resolution = 0
+        else:
+            self._resolution = int(prefs['resolution'])
 
     @Slot(str)
-    def on_new_work(self, file_id: str):
+    def on_process_video(self, file_id: str):
         """
         Signaled when the worker should process a video.
         """
@@ -155,6 +159,72 @@ class HEWorker(QObject):
 
         if not self.abort():
             self.sig_notes_done.emit(file_id, notes)
+
+    @Slot(str, dict, int)
+    def on_extract_clip(self, file_id: str, notes: dict, run_num: int):
+        """
+        Signaled when the user wants to extract a clip from a video.
+
+        Clip the given run number from the video and save it in the same
+        directory as the source video.
+        """
+        run_dict = notes['run'][run_num]
+        balls = run_dict['balls']
+        throws = run_dict['throws']
+
+        # construct absolute path to the clip we will create
+        file_path = os.path.abspath(file_id)
+        file_dir = os.path.dirname(file_path)
+        file_basename = os.path.basename(file_path)
+        file_root, file_ext = os.path.splitext(file_basename)
+        clip_basename = (f'{file_root}_run{run_num+1:03}'
+                         f'_{balls}b_{throws}t{file_ext}')
+        clip_path = os.path.join(file_dir, clip_basename)
+
+        if os.path.isfile(clip_path):
+            return      # clip already exists
+
+        # start clip 4 secs before first throw, end 4 secs after last catch
+        fps = notes['fps']
+        startframe, endframe = run_dict['frame range']
+        starttime = max(0.0, startframe / fps - 4.0)
+        endtime = min((notes['frame_count'] - 4) / fps, endframe / fps + 4.0)
+        duration = endtime - starttime
+
+        sm, ss = divmod(starttime, 60)
+        sh, sm = divmod(sm, 60)
+        starttime_str = f'{sh:02.0f}:{sm:02.0f}:{ss:02.3f}'
+        dm, ds = divmod(duration, 60)
+        dh, dm = divmod(dm, 60)
+        duration_str = f'{dh:02.0f}:{dm:02.0f}:{ds:02.3f}'
+
+        # run FFmpeg to make the clip
+        args = ['-i', file_path,
+                '-ss', starttime_str,
+                '-t', duration_str,
+                '-c', 'copy',       # 'copy' codec does not re-encode
+                clip_path]
+        retcode = self.run_ffmpeg(args, None)
+
+        if retcode != 0 or self.abort():
+            try:
+                os.remove(clip_path)
+            except FileNotFoundError:
+                pass
+            if not self.abort():
+                self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
+                                        f' with return code {retcode}')
+
+    def abort(self):
+        """
+        Return True if the user is trying to quit the app.
+        """
+        if self._abort:
+            return True
+        self._abort = QThread.currentThread().isInterruptionRequested()
+        if self._abort:
+            QThread.currentThread().quit()      # stop thread's event loop
+        return self._abort
 
     def make_product_fileinfo(self, file_id):
         """
@@ -444,14 +514,15 @@ class HEWorker(QObject):
 
     def run_ffmpeg(self, args, file_id):
         """
-        Run FFmpeg to do video transcoding.
+        Run FFmpeg as a separate process, optionally sending console output
+        back to the UI thread.
 
         Args:
             args(list):
                 Argument list for FFmpeg, minus the executable name
             file_id(str):
                 Filename for directing FFmpeg console output back to UI thread
-                using sig_output signal
+                using sig_output signal. If None then output is ignored.
         Returns:
             retcode(int):
                 FFmpeg return code
@@ -474,9 +545,11 @@ class HEWorker(QObject):
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')
 
         args = [ffmpeg_executable] + args
-        message = 'Running FFmpeg with arguments:\n{}\n\n'.format(
-                ' '.join(args))
-        self.sig_output.emit(file_id, message)
+
+        if file_id is not None:
+            message = 'Running FFmpeg with arguments:\n{}\n\n'.format(
+                    ' '.join(args))
+            self.sig_output.emit(file_id, message)
 
         try:
             kwargs = {}
@@ -493,20 +566,23 @@ class HEWorker(QObject):
             while p.poll() is None:
                 time.sleep(0.1)
                 for line in outputhandler:
-                    self.sig_output.emit(file_id, line)
+                    if file_id is not None:
+                        self.sig_output.emit(file_id, line)
                     if self.abort():
                         p.terminate()
                         return 1
 
-            results = f'FFmpeg process ended, return code {p.returncode}\n\n'
-            self.sig_output.emit(file_id, results)
+            if file_id is not None:
+                self.sig_output.emit(file_id, 'FFmpeg process ended, return '
+                                              f'code {p.returncode}\n\n')
 
             return p.returncode
         except subprocess.SubprocessError as err:
-            self.sig_output.emit(
-                file_id, '\n####### Error running FFmpeg #######\n')
-            self.sig_output.emit(
-                file_id, "Error message: {}\n\n\n".format(err))
+            if file_id is not None:
+                self.sig_output.emit(
+                    file_id, '\n####### Error running FFmpeg #######\n')
+                self.sig_output.emit(
+                    file_id, "Error message: {}\n\n\n".format(err))
         return 1
 
     def run_scanner(self, fileinfo, scanner, steps, writenotes):
@@ -566,18 +642,6 @@ class HEWorker(QObject):
 
         self.sig_output.emit(file_id, '\n')
         return 0
-
-    @Slot(dict)
-    def on_new_prefs(self, prefs: dict):
-        """
-        This slot gets signaled when there is a change to the display
-        preferences for output videos. The worker uses these preferences to
-        create a video with the given vertical pixel dimension.
-        """
-        if prefs['resolution'] == 'Actual size':
-            self._resolution = 0
-        else:
-            self._resolution = int(prefs['resolution'])
 
 # -----------------------------------------------------------------------------
 

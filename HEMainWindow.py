@@ -17,7 +17,7 @@ from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QSplitter, QStackedWidget, QPlainTextEdit,
                                QProgressBar, QMainWindow, QAction, QComboBox,
                                QAbstractItemView, QToolButton, QCheckBox,
-                               QTableWidget, QTableWidgetItem)
+                               QTableWidget, QTableWidgetItem, QMessageBox)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
 
 from HEWorker import HEWorker
@@ -31,11 +31,14 @@ class HEMainWindow(QMainWindow):
     """
     CURRENT_APP_VERSION = "1.0"
 
-    # signal that informs the worker of a new video to process
-    sig_new_work = Signal(str)
-
-    # signal that informs the worker of new display preferences
+    # signal that informs worker of new display preferences
     sig_new_prefs = Signal(dict)
+
+    # signal that informs worker of a new video to process
+    sig_process_video = Signal(str)
+
+    # signal that informs worker to extract a clip from a video
+    sig_extract_clip = Signal(str, dict, int)
 
     def __init__(self, app):
         super().__init__()
@@ -396,6 +399,7 @@ class HEMainWindow(QMainWindow):
                '(hold to continue cueing)</li>'
                '<li>z, x: step backward/forward by one throw</li>'
                '<li>a, s: step backward/forward by one run</li>'
+               '<li>k: save video clip of current run</li>'
                '</ul>'
                '<p>&nbsp;</p>'
                '<p><small>All portions of this software written by Jack Boyce '
@@ -452,8 +456,12 @@ class HEMainWindow(QMainWindow):
         self._thread = thread = QThread()
         worker.moveToThread(thread)
 
-        self.sig_new_work.connect(worker.on_new_work)
+        # signals from UI thread to worker
         self.sig_new_prefs.connect(worker.on_new_prefs)
+        self.sig_process_video.connect(worker.on_process_video)
+        self.sig_extract_clip.connect(worker.on_extract_clip)
+
+        # signals from worker back to UI thread
         worker.sig_progress.connect(self.on_worker_step)
         worker.sig_output.connect(self.on_worker_output)
         worker.sig_error.connect(self.on_worker_error)
@@ -505,27 +513,30 @@ class HEMainWindow(QMainWindow):
     @Slot(str, str)
     def on_worker_error(self, file_id: str, errormsg: str):
         """
-        Signaled by worker when there is an error.
+        Signaled by worker when there is an error processing `file_id`.
 
-        We don't currently do anything with the `errormsg` string so it's
-        assumed the caller has sent any relevant error messages to ordinary
-        output.
+        When file_id is an empty string it signifies a general nonfatal error
+        in the worker thread, which we show to the user.
         """
-        for i in range(0, self.videoList.count()):
-            item = self.videoList.item(i)
-            if item is None:
-                continue
-            if item.vc.filepath == file_id:
-                if item.vc.doneprocessing is False:
-                    # only do these steps on the first error for the item
-                    self.worker_queue_length -= 1
-                    item.vc.notes = None
-                    item.vc.doneprocessing = True
-                    item.setForeground(item.foreground)
-                    if item is self.currentVideoItem:
-                        self.buildViewList(item)
-                        self.progressBar.hide()
-                break
+        if file_id != "":
+            for i in range(0, self.videoList.count()):
+                item = self.videoList.item(i)
+                if item is None:
+                    continue
+                if item.vc.filepath == file_id:
+                    if item.vc.doneprocessing is False:
+                        # only do these steps on the first error for the item
+                        self.worker_queue_length -= 1
+                        item.vc.notes = None
+                        item.vc.doneprocessing = True
+                        item.setForeground(item.foreground)
+                        if item is self.currentVideoItem:
+                            self.buildViewList(item)
+                            self.progressBar.hide()
+                    break
+        else:
+            QMessageBox.warning(self, 'Oops, we encountered a problem.',
+                                errormsg, QMessageBox.Ok, QMessageBox.Ok)
 
     @Slot(str, dict, int, dict)
     def on_worker_displayvid_done(self, file_id: str, fileinfo: dict,
@@ -734,7 +745,7 @@ class HEMainWindow(QMainWindow):
                     runitem = QListWidgetItem('')
                     runitem._type = 'run'
                     runitem._runindex = i
-                    startframe, _ = notes['run'][i]['frame range']
+                    startframe, _ = run_dict['frame range']
                     # start one second before run's starting frame
                     startframe = max(0, floor(startframe - notes['fps']))
                     runitem._startframe = startframe
@@ -1038,7 +1049,7 @@ class HEMainWindow(QMainWindow):
         if self.prefs['resolution'] != old_resolution:
             if self.currentVideoItem is not None:
                 self.currentVideoItem.vc.doneprocessing = False
-                self.sig_new_work.emit(self.currentVideoItem.vc.filepath)
+                self.sig_process_video.emit(self.currentVideoItem.vc.filepath)
                 self.worker_queue_length += 1
 
                 # auto-select 'scanner output' view
@@ -1052,7 +1063,7 @@ class HEMainWindow(QMainWindow):
                 item = self.videoList.item(i)
                 if item is not None and item is not self.currentVideoItem:
                     item.vc.doneprocessing = False
-                    self.sig_new_work.emit(item.vc.filepath)
+                    self.sig_process_video.emit(item.vc.filepath)
                     self.worker_queue_length += 1
 
     @Slot()
@@ -1333,14 +1344,25 @@ class HEMainWindow(QMainWindow):
             else:
                 self.stepBackwardUntil = framenum - 2
         elif key == Qt.Key_Up or key == Qt.Key_Down:
+            # toggle overlays
             if notes is not None and notes['step'] >= 5:
                 vc.overlays = not vc.overlays
                 self.repaintPlayer()
+        elif key == Qt.Key_K and notes is not None:
+            # save a video clip of the current run
+            if 'run' not in notes:
+                return
+            for i in range(notes['runs']):
+                startframe, endframe = notes['run'][i]['frame range']
+
+                if startframe <= framenum <= endframe:
+                    self.sig_extract_clip.emit(vc.filepath, notes, i)
+                    break
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
-            if notes is None or 'arcs' not in notes or 'run' not in notes:
+            if 'arcs' not in notes or 'run' not in notes:
                 return
-            if (viewitem is not None and viewitem._type == 'run'):
+            if viewitem is not None and viewitem._type == 'run':
                 runindex = viewitem._runindex
                 throwarcs = notes['run'][runindex]['throw']
             else:
@@ -1355,7 +1377,7 @@ class HEMainWindow(QMainWindow):
             self.stepForward()          # see note above on step forward
         elif key == Qt.Key_Z and notes is not None:
             # play backward until previous throw in run
-            if notes is None or 'arcs' not in notes or 'run' not in notes:
+            if 'arcs' not in notes or 'run' not in notes:
                 return
             if (self.currentViewItem is not None and
                     self.currentViewItem._type == 'run'):
