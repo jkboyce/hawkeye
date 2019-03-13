@@ -45,7 +45,7 @@ objects in the background, the juggler's body movement, or camera noise.
 calculating weights for each event's affiliation with each arc (E step), and weighted least-squares fitting to
 refine the parabolas (M step). We merge and prune out bad arcs as we go. This is loosely based on Ribnick et al's
 algorithm (reference below) but we get higher reliability than their published numbers by doing more preprocessing
-before applying the EM algorithm.
+before applying the EM algorithm, and by being careful with the merging and pruning steps.
 
 A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm
 to help generate training data. Such a network might operate in close to real time, which could enable a number of
