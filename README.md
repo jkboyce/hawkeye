@@ -27,19 +27,19 @@ and note that it may take a few minutes to analyze videos of this length.
 ### Tracking details
 The key challenge in this project was to build an object tracker that doesn't rely on chroma keying, object tagging,
 or any special recording equipment. The goal was to be able to track thrown objects in ordinary video footage,
-captured with ordinary cameras, under a variety of recording conditions.
+captured with ordinary cameras, under a variety of conditions.
 
-The general problem of tracking objects in unconstrained video footage is quite difficult, and state of the art
-algorithms often give many false positives and false negatives, identifying objects that don't exist and missing (or
-losing) ones that do. What makes this problem more tractable is the degree of predictability in a thrown object's
-path: If we have many observations that together fit well to a parabolic trajectory, then we can have a high degree
-of confidence those observations represent a real thrown object. Conversely if an observation doesn't fit into any
-high-confidence trajectory, we can likely discard it as noise.
+The general problem of tracking multiple objects in unconstrained video footage is quite difficult, and state of the
+art algorithms typically have a total tracking accuracy (MOTA) of under 50% (see Leal-Taixé et al. 2017). What makes
+this problem more tractable is the degree of predictability in a thrown object's path: If we have many observations
+that together fit well to a parabolic trajectory, then we can have a high degree of confidence those observations
+represent a real thrown object. Conversely if an observation doesn't fit into any high-confidence trajectory, we can
+likely discard it as noise.
 
 At a high level our approach is:
 - Use a feature detector to identify moving objects in each frame. For this we use OpenCV's MOG background
 subtraction algorithm and simple blob detector. The majority of events detected at this stage are noise: Moving
-objects in the background, the juggler's body movement, or just camera noise.
+objects in the background, the juggler's body movement, or camera noise.
 - Piece together nearby (in space and time) events into preliminary parabolic tracks.
 - Optimize those parabolic tracks using the Expectation Maximization (EM) algorithm. This alternates between
 calculating weights for each event's affiliation with each arc (E step), and weighted least-squares fitting to
@@ -48,10 +48,12 @@ algorithm (reference below) but we get higher reliability than their published n
 before applying the EM algorithm.
 
 A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm
-to help generate training data. Such a network may be able to operate in close to real time, which would enable a
-number of interesting applications.
+to help generate training data. Such a network might operate in close to real time, which could enable a number of
+interesting applications.
 
 ### References
+- Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", arXiv:1704.02781, 2017.
+- Benfold, B. and Reid, I., "Stable Multi-target Tracking in Real-time Surveillance Video", Proceedings of the 2011 IEEE Conference on Computer Vision and Pattern Recognition, pp. 3457-3464, June 2011.
 - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal Processing Magazine, vol. 13, no. 6, pp. 47–60,
 November 1996.
 - Ribnick, E. et al, "Detection of Thrown Objects in Indoor and Outdoor Scenes", Proceedings of the 2007 IEEE/RSJ
