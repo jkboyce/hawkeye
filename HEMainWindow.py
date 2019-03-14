@@ -590,9 +590,10 @@ class HEMainWindow(QMainWindow):
                     item.vc.position = 0
                     item.vc.has_played = False
 
-                    # Define a function that maps an (x, y) pixel position in
-                    # the original video to the equivalent position in the
-                    # display video. See HEVideoView.draw_overlays().
+                    # Define a function that we will use to draw overlays on
+                    # the video. It maps an (x, y) pixel position in the
+                    # original video to the equivalent position in the display
+                    # video. See HEVideoView.draw_overlays().
                     if item.vc.videoresolution == 0:
                         def mapToDisplayVideo(x, y):
                             return x, y
@@ -611,6 +612,7 @@ class HEMainWindow(QMainWindow):
                             return new_x, new_y
                     item.vc.map = mapToDisplayVideo
 
+                    # load the video into the player
                     item.vc.player.pause()
                     item.vc.player.setMedia(QMediaContent(
                             QUrl.fromLocalFile(item.vc.videopath)))
@@ -619,9 +621,9 @@ class HEMainWindow(QMainWindow):
 
                     if item is self.currentVideoItem:
                         self.playButton.setEnabled(True)
-                        self.positionSlider.setRange(0, item.vc.duration)
                         # block signals so we don't trigger setPosition()
                         prev = self.positionSlider.blockSignals(True)
+                        self.positionSlider.setRange(0, item.vc.duration)
                         self.positionSlider.setValue(0)
                         self.positionSlider.blockSignals(prev)
                         self.buildViewList(item)
@@ -660,7 +662,6 @@ class HEMainWindow(QMainWindow):
                         startframe, _ = notes['run'][0]['frame range']
                         # one second before run's starting frame
                         startframe = max(0, floor(startframe - notes['fps']))
-
                         item.vc.position = positionForFramenum(item.vc,
                                                                startframe)
                         item.vc.player.setPosition(item.vc.position)
@@ -668,14 +669,13 @@ class HEMainWindow(QMainWindow):
 
                     if item is self.currentVideoItem:
                         self.progressBar.hide()
-                        self.positionSlider.setRange(0, item.vc.duration)
                         # block signals so we don't trigger setPosition()
                         prev = self.positionSlider.blockSignals(True)
-                        # in case position was changed above:
+                        self.positionSlider.setRange(0, item.vc.duration)
                         self.positionSlider.setValue(item.vc.position)
                         self.positionSlider.blockSignals(prev)
                         self.buildViewList(item)
-                        # switch to movie view if not already there
+                        # switch to movie view
                         self.views_stackedWidget.setCurrentIndex(0)
 
                 break
@@ -1244,9 +1244,7 @@ class HEMainWindow(QMainWindow):
         Called when the user selects Quit in the menu, or clicks the close
         box in the window's corner. This does a clean exit of the application.
         """
-        if self.currentVideoItem is not None:
-            self.currentVideoItem.vc.player.pause()
-
+        self.pauseMovie()
         wants_to_quit = True
 
         if self.isWorkerBusy():
@@ -1427,15 +1425,6 @@ class HEMainWindow(QMainWindow):
                     self.worker_clipping_queue_length += 1
                     self.setWorkerBusyIcon()
                     break
-            """
-            for i in range(notes['runs']):
-                startframe, endframe = notes['run'][i]['frame range']
-                if startframe <= framenum <= endframe:
-                    self.sig_extract_clip.emit(vc.filepath, notes, i)
-                    self.worker_clipping_queue_length += 1
-                    self.setWorkerBusyIcon()
-                    break
-            """
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if 'arcs' not in notes or 'run' not in notes:

@@ -154,7 +154,6 @@ class HEWorker(QObject):
         if need_notes and not self.abort():
             if self.make_scan_video(fileinfo) != 0:
                 return
-
             if self.run_scanner(fileinfo, scanner, steps=(2, 5),
                                 writenotes=True) != 0:
                 return
@@ -281,7 +280,8 @@ class HEWorker(QObject):
         variety of input formats, and it reports information not accessible
         through the OpenCV API such as display aspect ratio (DAR).
 
-        Returns 0 on success, nonzero on failure.
+        Returns 0 on success, nonzero on failure. This must signal sig_error
+        on every nonzero return value that isn't an abort.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -491,7 +491,8 @@ class HEWorker(QObject):
         square pixels. Some source video uses non-square pixels so we use
         FFmpeg's scaler to transform it.
 
-        Returns 0 on success, 1 on failure.
+        Returns 0 on success, 1 on failure. This must signal sig_error on every
+        nonzero return value that isn't an abort.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -605,7 +606,8 @@ class HEWorker(QObject):
         """
         Run the video scanner. Capture stdout and send the output to our UI.
 
-        Returns 0 on success, 1 on failure.
+        Returns 0 on success, 1 on failure. This must signal sig_error on every
+        nonzero return value that isn't an abort.
         """
         file_id = fileinfo['file_id']
         hawkeye_dir = fileinfo['hawkeye_dir']
