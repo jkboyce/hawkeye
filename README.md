@@ -16,8 +16,7 @@ appear again.)_
 
 [Hawkeye-1.0.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.0.exe) -- Windows installer. _(Note: If you get
 playback errors in the Hawkeye video player, it is likely you need to install video codecs on your computer. I
-recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_k-lite_codec_pack_standard.htm), which
-adds support for every format I've tried.)_
+recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_k-lite_codec_pack_standard.htm).)_
 
 ### Sample videos
 Below are some sample videos to demo Hawkeye in action. Drag and drop a video onto the Videos: box in the application,
