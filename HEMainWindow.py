@@ -10,7 +10,7 @@ import platform
 from math import ceil, floor, atan, pi
 
 from PySide2.QtCore import QDir, QSize, Qt, QUrl, QThread, Signal, Slot
-from PySide2.QtGui import QFont, QTextCursor, QIcon, QColor
+from PySide2.QtGui import QFont, QTextCursor, QIcon, QColor, QMovie
 from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QSizePolicy, QSlider, QStyle, QVBoxLayout,
                                QWidget, QGraphicsView, QListWidgetItem,
@@ -128,10 +128,28 @@ class HEMainWindow(QMainWindow):
         Widget for the left side of the UI, containing the Video and View
         list elements.
         """
+        if getattr(sys, 'frozen', False):
+            # we are running in a bundle
+            base_dir = sys._MEIPASS
+        else:
+            # we are running in a normal Python environment
+            base_dir = os.path.dirname(os.path.realpath(__file__))
+
         lists_layout = QVBoxLayout()
+        video_label_layout = QHBoxLayout()
         label = QLabel('Videos:')
         label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
-        lists_layout.addWidget(label)
+        video_label_layout.addWidget(label)
+        video_label_layout.addStretch()
+        self.busyIcon = QLabel()
+        self.busyIcon.setSizePolicy(QSizePolicy.Preferred,
+                                    QSizePolicy.Preferred)
+        self.busyMovie = QMovie(os.path.join(base_dir,
+                                             'resources/busy_icon.gif'))
+        self.busyIcon.setMovie(self.busyMovie)
+        video_label_layout.addWidget(self.busyIcon)
+        self.busyIcon.hide()
+        lists_layout.addLayout(video_label_layout)
         self.videoList = HEVideoList(self)
         self.videoList.itemSelectionChanged.connect(self.on_video_selected)
         self.videoList.setSizePolicy(QSizePolicy.Preferred,
@@ -467,11 +485,14 @@ class HEMainWindow(QMainWindow):
         worker.sig_error.connect(self.on_worker_error)
         worker.sig_video_done.connect(self.on_worker_displayvid_done)
         worker.sig_notes_done.connect(self.on_worker_notes_done)
+        worker.sig_clipping_done.connect(self.on_worker_clipping_done)
 
         thread.start(QThread.LowPriority)   # starts thread's event loop
 
         self.sig_new_prefs.emit(self.prefs)
-        self.worker_queue_length = 0
+        self.worker_processing_queue_length = 0
+        self.worker_clipping_queue_length = 0
+        self.setWorkerBusyIcon()
 
     @Slot(str, int, int)
     def on_worker_step(self, file_id: str, step: int, stepstotal: int):
@@ -526,7 +547,8 @@ class HEMainWindow(QMainWindow):
                 if item.vc.filepath == file_id:
                     if item.vc.doneprocessing is False:
                         # only do these steps on the first error for the item
-                        self.worker_queue_length -= 1
+                        self.worker_processingqueue_length -= 1
+                        self.setWorkerBusyIcon()
                         item.vc.notes = None
                         item.vc.doneprocessing = True
                         item.setForeground(item.foreground)
@@ -620,7 +642,8 @@ class HEMainWindow(QMainWindow):
                 if item.vc.doneprocessing is False:
                     # only do these steps once, and only if there was not
                     # previously an error
-                    self.worker_queue_length -= 1
+                    self.worker_processing_queue_length -= 1
+                    self.setWorkerBusyIcon()
                     item.setForeground(item.foreground)
 
                     item.vc.doneprocessing = True
@@ -656,6 +679,30 @@ class HEMainWindow(QMainWindow):
                         self.views_stackedWidget.setCurrentIndex(0)
 
                 break
+
+    @Slot()
+    def on_worker_clipping_done(self):
+        self.worker_clipping_queue_length -= 1
+        self.setWorkerBusyIcon()
+
+    def isWorkerBusy(self):
+        """
+        Returns True when worker is busy, False when idle.
+        """
+        return (self.worker_processing_queue_length
+                + self.worker_clipping_queue_length != 0)
+
+    def setWorkerBusyIcon(self):
+        """
+        Called whenever the state of the worker changes. We use this hook to
+        show/hide the "worker busy" icon in the UI.
+        """
+        if self.isWorkerBusy():
+            self.busyIcon.show()
+            self.busyMovie.start()
+        else:
+            self.busyIcon.hide()
+            self.busyMovie.stop()
 
     # -------------------------------------------------------------------------
     #  UI interactions
@@ -702,7 +749,7 @@ class HEMainWindow(QMainWindow):
 
         self.buildViewList(item)
 
-        if item.vc.doneprocessing:
+        if item.vc.doneprocessing and item.vc.videopath is not None:
             # switch to video view
             self.views_stackedWidget.setCurrentIndex(0)
         else:
@@ -1050,7 +1097,7 @@ class HEMainWindow(QMainWindow):
             if self.currentVideoItem is not None:
                 self.currentVideoItem.vc.doneprocessing = False
                 self.sig_process_video.emit(self.currentVideoItem.vc.filepath)
-                self.worker_queue_length += 1
+                self.worker_processing_queue_length += 1
 
                 # auto-select 'scanner output' view
                 for i in range(self.viewList.count()):
@@ -1064,7 +1111,9 @@ class HEMainWindow(QMainWindow):
                 if item is not None and item is not self.currentVideoItem:
                     item.vc.doneprocessing = False
                     self.sig_process_video.emit(item.vc.filepath)
-                    self.worker_queue_length += 1
+                    self.worker_processing_queue_length += 1
+
+            self.setWorkerBusyIcon()
 
     @Slot()
     def cancelPrefs(self):
@@ -1190,17 +1239,34 @@ class HEMainWindow(QMainWindow):
             vc.player.setPosition(position)
 
     @Slot()
-    def exitCall(self):
+    def exitCall(self, close_event=None):
         """
         Called when the user selects Quit in the menu, or clicks the close
         box in the window's corner. This does a clean exit of the application.
         """
         if self.currentVideoItem is not None:
             self.currentVideoItem.vc.player.pause()
-        self._thread.requestInterruption()
-        self._thread.quit()             # stop worker thread's event loop
-        self._thread.wait(5000)         # wait up to five seconds to stop
-        self.app.quit()
+
+        wants_to_quit = True
+
+        if self.isWorkerBusy():
+            response = QMessageBox.warning(
+                    self, "Processing underway",
+                    "We're still processing a video. Do you want to quit?",
+                    QMessageBox.Cancel | QMessageBox.Yes, QMessageBox.Yes)
+            wants_to_quit = (response == QMessageBox.Yes)
+
+        if close_event is not None:
+            if wants_to_quit:
+                close_event.accept()
+            else:
+                close_event.ignore()        # prevents window from closing
+
+        if wants_to_quit:
+            self._thread.requestInterruption()
+            self._thread.quit()             # stop worker thread's event loop
+            self._thread.wait(5000)         # wait up to five seconds to stop
+            self.app.quit()
 
     # -------------------------------------------------------------------------
     #  Media player
@@ -1349,15 +1415,26 @@ class HEMainWindow(QMainWindow):
                 vc.overlays = not vc.overlays
                 self.repaintPlayer()
         elif key == Qt.Key_K and notes is not None:
-            # save a video clip of the current run
+            # save a video clip of the currently-selected run
             if 'run' not in notes:
                 return
+            for i in range(self.viewList.count()):
+                viewitem = self.viewList.item(i)
+                if viewitem._type == 'run' and viewitem.isSelected():
+                    self.sig_extract_clip.emit(vc.filepath, notes,
+                                               viewitem._runindex)
+                    self.worker_clipping_queue_length += 1
+                    self.setWorkerBusyIcon()
+                    break
+            """
             for i in range(notes['runs']):
                 startframe, endframe = notes['run'][i]['frame range']
-
                 if startframe <= framenum <= endframe:
                     self.sig_extract_clip.emit(vc.filepath, notes, i)
+                    self.worker_clipping_queue_length += 1
+                    self.setWorkerBusyIcon()
                     break
+            """
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if 'arcs' not in notes or 'run' not in notes:
@@ -1435,7 +1512,7 @@ class HEMainWindow(QMainWindow):
         """
         Called when the user clicks the close icon in the window corner.
         """
-        self.exitCall()
+        self.exitCall(e)
 
 # -----------------------------------------------------------------------------
 

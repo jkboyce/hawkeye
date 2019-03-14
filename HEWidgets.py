@@ -410,7 +410,7 @@ class HEVideoList(QListWidget):
 
     def dropEvent(self, e):
         selectitem = None
-        workerfree = (self.window.worker_queue_length == 0)
+        workerfree = (self.window.worker_processing_queue_length == 0)
         for url in e.mimeData().urls():
             filepath = os.path.abspath(url.toLocalFile())
             item = self.addVideo(filepath)
@@ -434,7 +434,8 @@ class HEVideoList(QListWidget):
         self.addItem(item)
 
         self.window.sig_process_video.emit(filepath)
-        self.window.worker_queue_length += 1
+        self.window.worker_processing_queue_length += 1
+        self.window.setWorkerBusyIcon()
         return item
 
     def sizeHint(self):

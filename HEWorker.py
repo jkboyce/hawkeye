@@ -67,6 +67,9 @@ class HEWorker(QObject):
     #    arg2(dict) = notes dictionary for video
     sig_notes_done = Signal(str, dict)
 
+    # signal that making a video clip is done
+    sig_clipping_done = Signal()
+
     def __init__(self, app=None):
         super().__init__()
         self._app = app
@@ -103,20 +106,7 @@ class HEWorker(QObject):
             self.sig_error.emit(file_id, errorstring)
             return
 
-        # check if the target subdirectory exists, and if not create it
-        hawkeye_dir = fileinfo['hawkeye_dir']
-        if not os.path.exists(hawkeye_dir):
-            self.sig_output.emit(file_id,
-                                 f'Creating directory {hawkeye_dir}\n\n')
-            os.makedirs(hawkeye_dir)
-            if not os.path.exists(hawkeye_dir):
-                self.sig_output.emit(
-                        file_id, f'Error creating directory {hawkeye_dir}')
-                self.sig_error.emit(
-                        file_id, f'Error creating directory {hawkeye_dir}')
-                return
-
-        # check if the notes file already exists, and if so load it
+        # check if a valid notes file already exists, and if so load it
         need_notes = True
         notes_path = fileinfo['notes_path']
         if os.path.isfile(notes_path):
@@ -144,6 +134,19 @@ class HEWorker(QObject):
                 return
             """
 
+            # check if the target directory exists, and if not create it
+            hawkeye_dir = fileinfo['hawkeye_dir']
+            if not os.path.exists(hawkeye_dir):
+                self.sig_output.emit(file_id,
+                                     f'Creating directory {hawkeye_dir}\n\n')
+                os.makedirs(hawkeye_dir)
+                if not os.path.exists(hawkeye_dir):
+                    self.sig_output.emit(
+                            file_id, f'Error creating directory {hawkeye_dir}')
+                    self.sig_error.emit(
+                            file_id, f'Error creating directory {hawkeye_dir}')
+                    return
+
         if not self.abort():
             resolution = self.make_display_video(fileinfo, notes)
             self.sig_video_done.emit(file_id, fileinfo, resolution, notes)
@@ -152,7 +155,6 @@ class HEWorker(QObject):
             if self.make_scan_video(fileinfo) != 0:
                 return
 
-        if need_notes and not self.abort():
             if self.run_scanner(fileinfo, scanner, steps=(2, 5),
                                 writenotes=True) != 0:
                 return
@@ -178,11 +180,12 @@ class HEWorker(QObject):
         file_basename = os.path.basename(file_path)
         file_root, file_ext = os.path.splitext(file_basename)
         clip_basename = (f'{file_root}_run{run_num+1:03}'
-                         f'_{balls}b_{throws}t{file_ext}')
+                         f'_{balls}b_{throws}t.mp4')
         clip_path = os.path.join(file_dir, clip_basename)
 
         if os.path.isfile(clip_path):
-            return      # clip already exists
+            self.sig_clipping_done.emit()   # clip already exists
+            return
 
         # start clip 4 secs before first throw, end 4 secs after last catch
         fps = notes['fps']
@@ -198,11 +201,17 @@ class HEWorker(QObject):
         dh, dm = divmod(dm, 60)
         duration_str = f'{dh:02.0f}:{dm:02.0f}:{ds:02.3f}'
 
-        # run FFmpeg to make the clip
+        # run FFmpeg to make the clip. An alternative approach is to use the
+        # "copy" codec to avoid re-encoding the streams, but we would have to
+        # take care to start on a keyframe. I haven't found an easy way to do
+        # that while keeping the audio in sync.
         args = ['-i', file_path,
                 '-ss', starttime_str,
                 '-t', duration_str,
-                '-c', 'copy',       # 'copy' codec does not re-encode
+                '-c:a', 'aac',              # re-encode audio as AAC
+                '-c:v', 'libx264',          # re-encode video as H.264/mp4
+                '-preset', 'veryfast',
+                '-crf', '20',
                 clip_path]
         retcode = self.run_ffmpeg(args, None)
 
@@ -214,6 +223,7 @@ class HEWorker(QObject):
             if not self.abort():
                 self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
                                         f' with return code {retcode}')
+        self.sig_clipping_done.emit()
 
     def abort(self):
         """
@@ -271,7 +281,7 @@ class HEWorker(QObject):
         variety of input formats, and it reports information not accessible
         through the OpenCV API such as display aspect ratio (DAR).
 
-        Returns 0 on success, 1 on failure.
+        Returns 0 on success, nonzero on failure.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -300,7 +310,7 @@ class HEWorker(QObject):
                 '-show_streams', '-i', file_path]
         args = [ffprobe_executable] + args
 
-        message = 'Running FFprobe with arguments:\n{}\n\n'.format(
+        message = 'Running FFprobe with arguments:\n{}\n'.format(
                 ' '.join(args))
         self.sig_output.emit(file_id, message)
 
@@ -324,6 +334,15 @@ class HEWorker(QObject):
                     if self.abort():
                         p.terminate()
                         return 1
+
+            results = f'FFprobe process ended, return code {p.returncode}\n\n'
+            self.sig_output.emit(file_id, results)
+
+            if p.returncode != 0:
+                self.sig_output.emit(
+                    file_id, '\n####### Error running FFprobe #######\n')
+                self.sig_error.emit(file_id, 'Error getting video metadata')
+                return p.returncode
 
             parsed_output = json.loads(output)
             video_metadata = parsed_output['streams'][0]
@@ -358,9 +377,6 @@ class HEWorker(QObject):
                     f'scaling to width = {width} (DAR = {dar})\n')
             self.sig_output.emit(file_id, f'fps = {fps_raw} = {fps}\n')
             self.sig_output.emit(file_id, f'frame count = {framecount}\n')
-
-            results = f'FFprobe process ended, return code {p.returncode}\n\n'
-            self.sig_output.emit(file_id, results)
 
             # fill in the same notes fields as HEVideoScanner's step 1
             notes['fps'] = fps
