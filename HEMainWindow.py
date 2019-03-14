@@ -547,7 +547,7 @@ class HEMainWindow(QMainWindow):
                 if item.vc.filepath == file_id:
                     if item.vc.doneprocessing is False:
                         # only do these steps on the first error for the item
-                        self.worker_processingqueue_length -= 1
+                        self.worker_processing_queue_length -= 1
                         self.setWorkerBusyIcon()
                         item.vc.notes = None
                         item.vc.doneprocessing = True
