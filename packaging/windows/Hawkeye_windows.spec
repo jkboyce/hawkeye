@@ -21,7 +21,8 @@ a = Analysis(['../../Hawkeye.py'],
                       ],
              datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
                     ('../../resources/about_icon.png', './resources'),
-                    ('../../resources/preferences_icon.png', './resources')
+                    ('../../resources/preferences_icon.png', './resources'),
+                    ('../../resources/busy_icon.gif', './resources')
              ],
              hiddenimports=[],
              hookspath=[],
@@ -42,7 +43,7 @@ exe = EXE(pyz,
           console=False )
 
 # Files that Pyinstaller's dependency checker pulls in but aren't needed, so
-# remove them from the build. These total 470 MB!
+# remove them from the build. These total 470 MB.
 
 Hawkeye_excludes = [
                 'mfc140u.dll',
