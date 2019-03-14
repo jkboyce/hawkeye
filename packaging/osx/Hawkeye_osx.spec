@@ -16,7 +16,8 @@ a = Analysis(['../../Hawkeye.py'],
                       ],
              datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
                     ('../../resources/about_icon.png', './resources'),
-                    ('../../resources/preferences_icon.png', './resources')
+                    ('../../resources/preferences_icon.png', './resources'),
+                    ('../../resources/busy_icon.gif', './resources')
              ],
              hiddenimports=[],
              hookspath=[],

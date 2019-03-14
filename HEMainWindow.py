@@ -1252,7 +1252,8 @@ class HEMainWindow(QMainWindow):
         if self.isWorkerBusy():
             response = QMessageBox.warning(
                     self, "Processing underway",
-                    "We're still processing a video. Do you want to quit?",
+                    "We're still processing a video. "
+                    "Are you sure you want to quit?",
                     QMessageBox.Cancel | QMessageBox.Yes, QMessageBox.Yes)
             wants_to_quit = (response == QMessageBox.Yes)
 
