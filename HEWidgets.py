@@ -5,7 +5,7 @@
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
-# import platform
+import platform
 from math import log10, floor
 
 from PySide2.QtCore import QObject, Slot, QSize, Qt, QPoint, QPointF
@@ -120,17 +120,12 @@ class HEVideoView(QGraphicsView):
         if not self.window.currentVideoItem.vc.overlays:
             return
 
-        """
-        Before we needed the following but it seems to be working now...
-
         # the following is a hack to solve the way QMediaPlayer on Windows
         # reports positions within videos, so we don't get an off-by-one error
         if platform.system() == 'Windows':
             notes_framenum = framenum + 1
         else:
             notes_framenum = framenum
-        """
-        notes_framenum = framenum
 
         prefs = self.window.prefs
         mapToDisplayVideo = self.window.currentVideoItem.vc.map
