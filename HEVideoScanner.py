@@ -1,15 +1,15 @@
 # HEVideoScanner.py
 #
-# Python class to extract features from a juggling video.
+# Class to extract features from a juggling video.
 #
-# Copyright 2018 Jack Boyce (jboyce@gmail.com)
+# Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import sys
 import os
 import pickle
 import copy
-from math import sqrt, exp, isnan, atan, degrees, sin, cos, floor
-import statistics
+from math import sqrt, exp, isnan, atan, degrees, sin, cos
+from statistics import median, mean
 
 import cv2
 
@@ -18,23 +18,26 @@ from HETypes import Balltag, Ballarc
 
 class HEVideoScanner:
     """
-    Python class that uses OpenCV to process juggling video, determining ball
+    This class uses OpenCV to process juggling video, determining ball
     movements, juggler positions, and other high-level features. A typical use
-    of this would be something like:
+    of this is something like:
 
         scanner = HEVideoScanner('video.mp4')
         scanner.process()
         notes = scanner.notes
         print('found {} runs in video'.format(notes['runs']))
 
-    Scanning occurs in four distinct steps, and optionally you can specify
+    Scanning occurs in five distinct steps, and optionally you can specify
     which steps to do (default is all), and whether to write results to
     disk after processing.
 
-    The 'notes' dictionary contains all scan results, and the data is recorded
-    as follows:
+    The 'notes' dictionary contains all scan results, with the data recorded as
+    follows:
 
     notes['version']:
+        sequential number incremented whenever notes dictionary format
+        changes (int)
+    notes['step']:
         step number of last processing step completed (int)
     notes['source']:
         full path to source video (str)
@@ -50,15 +53,22 @@ class HEVideoScanner:
     notes['frame_height']:
         source video frame height in pixels (int)
     notes['camera_tilt']:
-        inferred camera tilt angle in source video, in radians (float)
+        inferred camera tilt angle in source video, in radians (float).
+        Positive camera tilt equates to a counterclockwise rotation of the
+        juggler in the video.
     notes['frame_count']:
-        count of frames in source video (int)
+        actual count of frames in source video (int)
+    notes['frame_count_estimate']:
+        estimated count of frames in source video, from metadata (int)
     notes['meas'][framenum]:
         list of Balltag objects in frame 'framenum' (list)
     notes['body'][framenum]:
-        tuple describing torso bounding box (body_x, body_y, body_w, body_h)
-        observed in frame 'framenum', where all values are in pixel units
-        (tuple)
+        tuple describing torso bounding box
+        (body_x, body_y, body_w, body_h, was_detected)
+        observed in frame 'framenum', where all values are in camera
+        coordinates and pixel units, and was_detected is a boolean indicating
+        whether the bounding box was a direct detection (True) or was inferred
+        (False) (tuple)
     notes['arcs']:
         list of Ballarc objects detected in video (list)
     notes['g_px_per_frame_sq']:
@@ -70,7 +80,7 @@ class HEVideoScanner:
     notes['runs']:
         number of runs detected in video (int)
     notes['run'][run_num]:
-        run dictionary describing run number run_num (dict)
+        run dictionary describing run number run_num (dict) -- SEE BELOW
 
     The 'run_dict' dictionary for each run is defined as:
 
@@ -88,6 +98,9 @@ class HEVideoScanner:
     run_dict['duration']:
         duration in seconds of run (float)
     """
+
+    CURRENT_NOTES_VERSION = 1
+
     def __init__(self, filename, scanvideo=None, params=None):
         """
         Initialize the video scanner. This doesn't do any actual processing;
@@ -101,7 +114,7 @@ class HEVideoScanner:
                 Filename of video to do image detection on. This is assumed to
                 be a rescaled version of the video in the 'filename' argument,
                 with the same frame rate. If provided, the object detector
-                in step 1 will use this version of the video and translate
+                in step 2 will use this version of the video and translate
                 coordinates to the original.
             params(dict, optional):
                 Parameters to configure the scanner. The function
@@ -111,17 +124,18 @@ class HEVideoScanner:
             None
         """
         self.notes = dict()
+        self.notes['version'] = HEVideoScanner.CURRENT_NOTES_VERSION
         self.notes['source'] = os.path.abspath(filename)
         self.notes['scanvideo'] = (os.path.abspath(scanvideo)
                                    if scanvideo is not None else None)
         self.notes['scanner_params'] = (HEVideoScanner.defaultScannerParams()
                                         if params is None else params)
-        self.notes['version'] = 0
+        self.notes['step'] = 0
 
-    def process(self, steps=(1, 4), readnotes=False, writenotes=False,
+    def process(self, steps=(1, 5), readnotes=False, writenotes=False,
                 notesdir=None, callback=None, verbosity=0):
         """
-        Process the video. Processing occurs in four distinct steps. The
+        Process the video. Processing occurs in five distinct steps. The
         default is to do all processing steps sequentially, but processing may
         be broken up into multiple calls to this method if desired -- see the
         'steps' argument.
@@ -133,7 +147,7 @@ class HEVideoScanner:
         Args:
             steps((int, int) tuple, optional):
                 Starting and finishing step numbers to execute. Default is
-                (1, 4), or all steps.
+                (1, 5), or all steps.
             readnotes(bool, optional):
                 Should the notes dictionary be read from disk prior to
                 processing.
@@ -173,7 +187,7 @@ class HEVideoScanner:
                 _notesdir = os.path.join(dirname, notesdir)
 
         step_start, step_end = steps
-        if step_start in (2, 3, 4):
+        if step_start in (2, 3, 4, 5):
             if readnotes:
                 _notespath = os.path.join(_notesdir, '{}_notes{}.pkl'.format(
                                           basename_noext, step_start - 1))
@@ -183,17 +197,19 @@ class HEVideoScanner:
 
         for step in range(step_start, step_end + 1):
             if step == 1:
-                self.detect_objects(display=False)
+                self.get_video_metadata()
             elif step == 2:
-                self.build_initial_arcs()
+                self.detect_objects(display=False)
             elif step == 3:
-                self.EM_optimize()
+                self.build_initial_arcs()
             elif step == 4:
+                self.EM_optimize()
+            elif step == 5:
                 self.analyze_juggling()
-            self.notes['version'] = step
+            self.notes['step'] = step
 
         if writenotes:
-            if step_end in (1, 2, 3):
+            if step_end in (1, 2, 3, 4):
                 _notespath = os.path.join(_notesdir,
                                           '{}_notes{}.pkl'.format(
                                             basename_noext, step_end))
@@ -205,7 +221,44 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Video scanner done')
 
-    # --- Step 1: Extract features from video ---------------------------------
+    # --- Step 1: Get video metadata ------------------------------------------
+
+    def get_video_metadata(self):
+        """
+        Find basic metadata about the video: dimensions, fps, and frame count.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        notes = self.notes
+
+        if self._verbosity >= 1:
+            print('Getting metadata for video {}'.format(notes['source']))
+
+        cap = cv2.VideoCapture(notes['source'])
+        if not cap.isOpened():
+            raise HEScanException("Error opening video file {}".format(
+                notes['source']))
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        framecount = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+
+        notes['fps'] = fps
+        notes['frame_width'] = framewidth
+        notes['frame_height'] = frameheight
+        notes['frame_count_estimate'] = framecount
+
+        if self._verbosity >= 2:
+            print('width = {}, height = {}, fps = {}'.format(
+                framewidth, frameheight, fps))
+            print(f'estimated frame count = {framecount}')
+
+    # --- Step 2: Extract features from video ---------------------------------
 
     def detect_objects(self, display=False):
         """
@@ -215,43 +268,49 @@ class HEVideoScanner:
         This function is the only one in the scanner that uses OpenCV.
 
         Args:
-            display(bool):
+            display(bool, optional):
                 if True then show video in a window while processing
         Returns:
             None
         """
         notes = self.notes
-        scanvideo = self.notes['scanvideo']
 
         if self._verbosity >= 1:
             print('Object detection starting...')
-        cap = cv2.VideoCapture(notes['source'])
-        if not cap.isOpened():
-            print('Error opening video file')
-            exit()      # do something more graceful here! JKB
 
         if display:
             cv2.namedWindow('Frame')
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        framecount = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if self._verbosity >= 2:
-            print('width = {}, height = {}, fps = {}'.format(
-                framewidth, frameheight, fps))
-            print('estimated frame_count = {}'.format(framecount))
+        fps = notes['fps']
+        framewidth = notes['frame_width']
+        frameheight = notes['frame_height']
+        framecount = notes['frame_count_estimate']
+        scanvideo = notes['scanvideo']
 
-        scan_framewidth, scan_frameheight = framewidth, frameheight
+        if scanvideo is None:
+            # no substitute scan video provided
+            if self._verbosity >= 2:
+                print('Scanning from video {}'.format(notes['source']))
 
-        if scanvideo is not None:
-            cap.release()
+            cap = cv2.VideoCapture(notes['source'])
+            if not cap.isOpened():
+                raise HEScanException("Error opening video file {}".format(
+                    notes['source']))
+
+            scan_framewidth, scan_frameheight = framewidth, frameheight
+        else:
+            if self._verbosity >= 2:
+                print(f'Scanning from video {scanvideo}')
+
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
-                print('Error opening scanner video file')
-                exit()      # ...and here JKB
+                raise HEScanException(f'Error opening video file {scanvideo}')
+
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if self._verbosity >= 2:
+                print('width = {}, height = {}'.format(
+                    scan_framewidth, scan_frameheight))
 
         scan_scaledown = frameheight / scan_frameheight
 
@@ -262,9 +321,6 @@ class HEVideoScanner:
             orig_y = scan_y * scan_scaledown
             return orig_x, orig_y
 
-        notes['fps'] = fps
-        notes['frame_width'] = framewidth
-        notes['frame_height'] = frameheight
         notes['camera_tilt'] = 0.0
         notes['scanner_params']['min_tags_per_arc'] = (
                 notes['scanner_params']['min_tags_per_arc_high_fps']
@@ -306,7 +362,7 @@ class HEVideoScanner:
             # we are running in a normal Python environment
             base_dir = os.path.dirname(os.path.realpath(__file__))
         body_cascade_file = os.path.join(base_dir,
-                                         'haarcascade_upperbody.xml')
+                                         'resources/haarcascade_upperbody.xml')
         body_cascade = cv2.CascadeClassifier(body_cascade_file)
 
         framenum = framereads = 0
@@ -318,6 +374,7 @@ class HEVideoScanner:
                 fps *
                 notes['scanner_params']['body_averaging_time_window_secs']))
         body_frames_averaged = 0
+        frames_with_no_body = 0
 
         def center_distance(a, b):
             ax, ay, aw, ah = a
@@ -351,6 +408,7 @@ class HEVideoScanner:
                 bodies = bodies[:1]
 
             for x, y, w, h in bodies:
+                frames_with_no_body = 0
                 if body_average is None:
                     body_average = (x, y, w, h)
                     body_frames_averaged = 1
@@ -363,14 +421,19 @@ class HEVideoScanner:
                                     body_average[1] * temp1 + y * temp2,
                                     body_average[2] * temp1 + w * temp2,
                                     body_average[3] * temp1 + h * temp2)
+                break
+            else:
+                frames_with_no_body += 1
 
-            if body_average is not None:
+            if (body_average is not None and
+                    frames_with_no_body < body_frames_to_average):
                 body_x, body_y = scan_to_video_coord(body_average[0],
                                                      body_average[1])
                 body_w = body_average[2] * scan_scaledown
                 body_h = body_average[3] * scan_scaledown
 
-                notes['body'][framenum] = (body_x, body_y, body_w, body_h)
+                notes['body'][framenum] = (body_x, body_y, body_w, body_h,
+                                           True)
                 if display:
                     x = int(round(body_average[0]))
                     y = int(round(body_average[1]))
@@ -418,16 +481,16 @@ class HEVideoScanner:
 
         notes['frame_count'] = framenum
         if self._verbosity >= 2:
-            print('actual frame_count = {}'.format(notes['frame_count']))
+            print('actual frame count = {}'.format(notes['frame_count']))
 
         cap.release()
         if display:
             cv2.destroyAllWindows()
 
         if self._verbosity >= 1:
-            print('Object detection done: {} detections'.format(tag_count))
+            print(f'Object detection done: {tag_count} detections')
 
-    # --- Step 2: Build initial set of arcs -----------------------------------
+    # --- Step 3: Build initial set of arcs -----------------------------------
 
     def build_initial_arcs(self):
         """
@@ -447,10 +510,14 @@ class HEVideoScanner:
 
         # Scan once to get a small number of arcs, to make a preliminary
         # estimate of gravity
+        if self._verbosity >= 2:
+            print('building trial arcs...')
         arcs = self.construct_arcs(maxcount=5)
         self.find_global_params(arcs)
 
         # Scan again to get all arcs
+        if self._verbosity >= 2:
+            print('building all arcs...')
         arcs = self.construct_arcs()
         self.find_global_params(arcs)
 
@@ -460,8 +527,7 @@ class HEVideoScanner:
         notes['arcs'] = arcs
 
         if self._verbosity >= 1:
-            print('Build initial arcs done: {} arcs created'.format(
-                len(arcs)))
+            print('Build initial arcs done: {} arcs created'.format(len(arcs)))
 
     def construct_arcs(self, maxcount=None):
         """
@@ -479,10 +545,10 @@ class HEVideoScanner:
         """
         notes = self.notes
 
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             print('construct_arcs(): building neighbor lists...')
         self.build_neighbor_lists()
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             print('done')
 
         arclist = []
@@ -588,10 +654,10 @@ class HEVideoScanner:
                         if maxcount is not None and len(arclist) >= maxcount:
                             done_making_arcs = True
 
-                        if self._verbosity >= 2:
-                            print('made arc number {}, f_peak = {}'
-                                  ', e = {}'.format(len(arclist), arc.f_peak,
-                                                    arc.e))
+                        if self._verbosity >= 2 and maxcount is not None:
+                            print(f'made arc number {len(arclist)}, '
+                                  f'frame_peak = {arc.f_peak:.1f}, '
+                                  f'accel = {arc.e:.3f}')
                     else:
                         for t in arc.tags:
                             t.weight = None
@@ -619,8 +685,7 @@ class HEVideoScanner:
                 for tag in arc.tags:
                     tag.done = True
             print(
-                'construct_arcs() done: {} of {} tags attached '
-                'to {} arcs'.format(
+                'done: {} of {} tags attached to {} arcs'.format(
                     sum(1 for t in tagqueue if t.done is True), len(tagqueue),
                     len(arclist)))
 
@@ -677,7 +742,8 @@ class HEVideoScanner:
 
     def fit_arcs(self, arcs):
         """
-        Do a weighted least-squares fit of each arc to the measured points.
+        Do a weighted least-squares fit of each arc (assumed to be a parabolic
+        trajectory) to the measured points.
 
         Args:
             arcs(list of Ballarc):
@@ -869,18 +935,17 @@ class HEVideoScanner:
 
         most_tagged_arcs = sorted(arcs, key=lambda a: len(a.tags),
                                   reverse=True)
-        g_px_per_frame_sq = 2 * statistics.median([a.e for a in
-                                                   most_tagged_arcs[:10]])
+        g_px_per_frame_sq = 2 * median([a.e for a in most_tagged_arcs[:10]])
         notes['g_px_per_frame_sq'] = g_px_per_frame_sq
 
         if 'fps' in notes:
             fps = notes['fps']
             notes['cm_per_pixel'] = 980.7 / (g_px_per_frame_sq * fps**2)
             if self._verbosity >= 2:
-                print('g_px/f^2 = {}, cm/px = {}'.format(
+                print('g (pixels/frame^2) = {:.6f}, cm/pixel = {:.6f}'.format(
                     notes['g_px_per_frame_sq'], notes['cm_per_pixel']))
 
-    # --- Step 3: Refine arcs with EM algorithm -------------------------------
+    # --- Step 4: Refine arcs with EM algorithm -------------------------------
 
     def EM_optimize(self):
         """
@@ -889,6 +954,13 @@ class HEVideoScanner:
         affiliation with each arc (E step), and using weighted least-squares
         fitting to refine the parabolas (M step). Try to merge and prune out
         bad arcs as we go.
+
+        References for EM algorithm:
+        - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal
+          Processing Magazine, vol. 13, no. 6, pp. 47–60, November 1996.
+        - Ribnick, E. et al, "Detection of Thrown Objects in Indoor and
+          Outdoor Scenes", Proceedings of the 2007 IEEE/RSJ International
+          Conference on Intelligent Robots and Systems, IROS 2007.
 
         Args:
             None
@@ -920,7 +992,7 @@ class HEVideoScanner:
                 print('estimating camera tilt...')
             self.estimate_camera_tilt(arcs)
             if self._verbosity >= 2:
-                print('camera tilt = {} degrees'.format(
+                print('camera tilt = {:.6f} degrees'.format(
                                 degrees(notes['camera_tilt'])))
 
             if self._verbosity >= 2:
@@ -1009,6 +1081,14 @@ class HEVideoScanner:
         Estimate how many degrees the video is rotated, based on estimation of
         x- and y-components of gravity. Estimate acceleration in each direction
         with a least-squares fit.
+
+        Based on our sign conventions, a positive camera tilt angle
+        corresponds to an apparent counterclockwise rotation of the juggler in
+        the video. We transform from juggler coordinates to pixel (camera)
+        coordinates with:
+
+                x_pixels =  x_juggler * cos(t) + y_juggler * sin(t)
+                y_pixels = -x_juggler * sin(t) + y_juggler * cos(t)
 
         Args:
             arcs(list of Ballarc):
@@ -1272,10 +1352,10 @@ class HEVideoScanner:
                         cause = 'unknown reason'
                     print('  removed arc {} starting at frame {}: {}'.format(
                             arc.id_, f_min, cause))
-                return True
 
-            if self._callback is not None:
-                self._callback()
+                if self._callback is not None:
+                    self._callback()
+                return True
 
         return False
 
@@ -1323,8 +1403,8 @@ class HEVideoScanner:
                         arc.done = False
                     tags_removed += 1
 
-                if self._callback is not None:
-                    self._callback()
+            if self._callback is not None:
+                self._callback()
 
             arcs_to_kill = []
             keep_cleaning = False
@@ -1386,72 +1466,128 @@ class HEVideoScanner:
                    notes['scanner_params']['max_distance_pixels']
                    for arc in tag.weight)
 
-    # --- Step 4: Analyze juggling patterns -----------------------------------
+    # --- Step 5: Analyze juggling patterns -----------------------------------
 
     def analyze_juggling(self):
+        """
+        Build out a higher-level description of the juggling using the
+        individual throw arcs we found in steps 1-3.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        notes = self.notes
         if self._verbosity >= 1:
             print('Juggling analyzer starting...')
 
-        self.compile_run_data()
-        self.find_throw_errors()
+        self.add_missing_torso_measurements()
+        self.compile_arc_data()
+        runs = self.find_runs()
 
+        if self._verbosity >= 2:
+            print(f'Number of runs detected = {notes["runs"]}')
+
+        # Analyze each run in turn. All run-related information is stored in
+        # a dictionary called run_dict.
+        notes['run'] = list()
+        for run_id, run in enumerate(runs, start=1):
+            # assign sequence numbers
+            for throw_id, arc in enumerate(sorted(
+                            run, key=lambda x: x.f_throw), start=1):
+                arc.run_id = run_id
+                arc.throw_id = throw_id
+
+            run_dict = dict()
+            run_dict['throws'] = len(run)
+            run_dict['throw'] = run
+
+            if self._verbosity >= 2:
+                print(f'--- Analyzing run {run_id} ------------------------')
+                print(f'Number of arcs detected = {run_dict["throws"]}')
+
+            self.connect_arcs(run_dict)
+            self.assign_hands(run_dict)
+            self.estimate_ball_count(run_dict)
+            # self.analyze_throw_errors(run_dict)
+
+            notes['run'].append(run_dict)
+
+            if self._callback is not None:
+                self._callback()
+
+        if self._verbosity >= 2:
+            print('--------------------------------------------')
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
-    def compile_run_data(self):
+    def add_missing_torso_measurements(self):
         """
-        Separate arcs into runs, and compile basic information about each
-        run (number of balls, duration, etc.). Stitch together arcs into
-        paths of specific balls. Determine throwing and catching hand for
-        each arc.
+        Because the Haar cascade detector is not perfect, the juggler torso
+        is often not detected on every frame. Fill in missing measurements
+        with an estimate.
+        """
+        notes = self.notes
+        last_torso = None
+
+        for framenum in range(0, notes['frame_count']):
+            if framenum in notes['body']:
+                last_torso = notes['body'][framenum]
+            else:
+                """
+                Torso was not detected for this frame. Estimate the torso box
+                based on tagged ball positions. Find the most extremal tags
+                nearby in time.
+                """
+                f_min = max(framenum - 120, 0)
+                f_max = min(framenum + 120, notes['frame_count'])
+
+                nearby_tags = []
+                for frame in range(f_min, f_max):
+                    nearby_tags.extend(notes['meas'][frame])
+
+                if len(nearby_tags) > 0:
+                    x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
+                    x_min = median([t.x for t in x_sorted_tags[:5]])
+                    x_max = median([t.x for t in x_sorted_tags[-5:]])
+
+                    if last_torso is not None:
+                        _, y, w, h, _ = last_torso
+                        x = 0.5 * (x_min + x_max - w)
+                    else:
+                        y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
+                        y_max = median([t.y for t in y_sorted_tags[-5:]])
+
+                        w = 0.7 * (x_max - x_min)   # make educated guesses
+                        h = 0.8 * w
+                        x, y = 0.5 * (x_min + x_max - w), y_max - h
+
+                    notes['body'][framenum] = (x, y, w, h, False)
+                    # print(f'added torso to frame {framenum}')
+
+    def compile_arc_data(self):
+        """
+        Work out some basic information about each arc in the video: Throw
+        height, throw position relative to centerline, etc.
         """
         notes = self.notes
         arcs = notes['arcs']
-        notes['run'] = list()
 
-        if len(arcs) == 0:
-            notes['runs'] = 0
-            return
-
-        # Calculate when each arc was thrown and caught. Assume that the
-        # bottom of the torso measurement box represents the throw and catch
-        # elevation.
         c = cos(notes['camera_tilt'])
         s = sin(notes['camera_tilt'])
 
         for arc in arcs:
-            peak_framenum = round(arc.f_peak)
-            if peak_framenum in notes['body']:
-                x, y, w, h = notes['body'][peak_framenum]
-            else:
-                """
-                Estimate torso box based on balltags. Find the most extremal
-                tags nearby in time.
-                """
-                f_min = max(peak_framenum - 200, 0)
-                f_max = min(peak_framenum + 200, notes['frame_count'])
-                nearby_tags = []
-                for frame in range(f_min, f_max):
-                    nearby_tags.extend(notes['meas'][frame])
-                y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
-                y_max = statistics.median([t.y for t in y_sorted_tags[-5:]])
-                x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
-                x_min = statistics.median([t.x for t in x_sorted_tags[:5]])
-                x_max = statistics.median([t.x for t in x_sorted_tags[-5:]])
-
-                w = 0.7 * (x_max - x_min)
-                h = 0.8 * w
-                x, y = 0.5 * (x_min + x_max - w), y_max - h
-                """
-                print('estimated torso = ({}, {}, {}, {})'.format(
-                        x, y, w, h))
-                """
+            # Calculate when each arc was thrown and caught. Assume that the
+            # bottom of the torso measurement box represents the throw and
+            # catch elevation.
+            x, y, w, h, _ = notes['body'][round(arc.f_peak)]
 
             # (xs_b, ys_b) are the screen coordinates of the bottom center
             # of the torso box
             xs_b = x + 0.5 * w
             ys_b = y + h
-            # in rotated (juggler) coordinates:
+            # in juggler coordinates:
             x_b = xs_b * c - ys_b * s
             y_b = xs_b * s + ys_b * c
 
@@ -1472,34 +1608,39 @@ class HEVideoScanner:
             arc.x_origin = x_b
             arc.y_origin = y_b
 
-            # make high-probability assignments of catching hands
-            if arc.x_catch > 0.5 * w:
-                arc.hand_catch = 'left'
-            elif arc.x_catch < -0.5 * w:
-                arc.hand_catch = 'right'
-            else:
-                arc.hand_catch = None
-            arc.hand_throw = None
-            arc.prev = None
+    def find_runs(self):
+        """
+        Separate arcs into a set of runs, by assuming that two arcs that
+        overlap in time are part of the same run.
 
+        Args:
+            None
+        Returns:
+            runs(list):
+                List of runs, each of which is a list of Ballarc objects
         """
-        Separate out the arcs into runs. Assume that two arcs that overlap in
-        time are part of the same run.
-        """
+        notes = self.notes
+        arcs = notes['arcs']
+
+        if len(arcs) == 0:
+            notes['runs'] = 0
+            return []
+
         runs = list()
-        sorted_arcs = sorted(
-                [(arc, arc.f_throw, arc.f_catch) for arc in arcs],
-                key=lambda i: i[1])             # sort by throw frame
-        current_run = [sorted_arcs[0][0]]       # first arc
-        current_max_frame = sorted_arcs[0][2]   # first arc's catch frame
-        for arc, f_throw, f_catch in sorted_arcs[1:]:
-            if f_throw < current_max_frame:
+        sorted_arcs = sorted(arcs, key=lambda a: a.f_throw)
+        first_arc = sorted_arcs[0]
+        current_run = [first_arc]
+        current_max_frame = first_arc.f_catch
+
+        for arc in sorted_arcs[1:]:
+            if arc.f_throw < current_max_frame:
                 current_run.append(arc)
-                current_max_frame = max(current_max_frame, f_catch)
+                current_max_frame = max(current_max_frame, arc.f_catch)
             else:
+                # got a gap in time -> start a new run
                 runs.append(current_run)
                 current_run = [arc]
-                current_max_frame = f_catch
+                current_max_frame = arc.f_catch
         runs.append(current_run)
 
         # filter out any runs that are too short
@@ -1511,36 +1652,18 @@ class HEVideoScanner:
             for tag in arc.tags:
                 notes['meas'][tag.frame].remove(tag)
         runs = good_runs
-        # runs = [run for run in runs if len(run) >= 2]
 
         notes['runs'] = len(runs)
-
-        # analyze each run in turn
-        for run_id, run in enumerate(runs, start=1):
-            for arc in run:
-                arc.run_id = run_id
-
-            run_dict = dict()
-            run_dict['throws'] = len(run)
-            run_dict['throw'] = run
-            self.connect_arcs(run_dict)
-            self.assign_hands(run_dict)
-            notes['run'].append(run_dict)
-
-        if self._verbosity >= 2:
-            for arc in arcs:
-                print('arc throw/catch at ({:8.6}, {:8.6})'
-                      ' from {} hand'.format(
-                        arc.f_throw, arc.f_catch, arc.hand_throw))
-            print('number of runs detected = {}'.format(notes['runs']))
+        return runs
 
     def connect_arcs(self, run_dict):
         """
         Try to connect arcs together that represent subsequent throws for
         a given ball. Do this by filling in arc.prev and arc.next for each
         arc in a given run, forming a linked list for each ball in the pattern.
-        When arcs are not detected (e.g., very low throws or handoffs), this
-        process will make mistakes.
+
+        Since some arcs are not detected (e.g. very low throws), this process
+        can often make mistakes.
 
         Args:
             run_dict(dict):
@@ -1597,22 +1720,18 @@ class HEVideoScanner:
                     else:
                         arc.next = likely_nexts[1][0]
                         likely_nexts[1][0].prev = arc
-
-                if arc.prev is not None:
-                    arc.hand_throw = arc.prev.hand_catch
         else:
             # likely just a single throw in the run
             run_dict['throws per sec'] = None
             for arc in run:
                 arc.next = arc.prev = None
 
-        run_dict['balls'] = sum(1 for arc in run if arc.prev is None)
-
     def assign_hands(self, run_dict):
         """
-        Finish assigning hands to throws for a given run. Do this by filling in
-        arc.hand_throw and arc.hand_catch for each arc. Note some of the hand
-        assignments were already done in previous steps.
+        Assign throwing and catching hands to every arc in a given run. This
+        algorithm starts by assigning throws/catches far away from the
+        centerline and chaining from there, using the fact that two events in
+        close succession probably involve opposite hands.
 
         Args:
             run_dict(dict):
@@ -1622,18 +1741,61 @@ class HEVideoScanner:
         """
         notes = self.notes
         run = run_dict['throw']
-        mp_window_frames = 0.05 * notes['fps']
-        mp_window_pixels = 10.0 / notes['cm_per_pixel']
-        min_cycle_frames = 0.23 * notes['fps']
+        debug = False
+
+        if self._verbosity >= 2:
+            print('Assigning hands to arcs...')
+
+        # Start by making high-probability assignments of catches and throws.
+        # Assume that the 25% of throws with the largest x_throw values are
+        # from the left hand, and similarly for the right, and for catches
+        # as well.
+
+        for arc in run:
+            arc.hand_throw = arc.hand_catch = None
+
+        arcs_throw_sort = sorted(run, key=lambda a: a.x_throw)
+        for arc in arcs_throw_sort[:int(len(arcs_throw_sort)/4)]:
+            arc.hand_throw = 'right'
+        for arc in arcs_throw_sort[int(3*len(arcs_throw_sort)/4):]:
+            arc.hand_throw = 'left'
+
+        arcs_catch_sort = sorted(run, key=lambda a: a.x_catch)
+        for arc in arcs_catch_sort[:int(len(arcs_catch_sort)/4)]:
+            arc.hand_catch = 'right'
+        for arc in arcs_catch_sort[int(3*len(arcs_catch_sort)/4):]:
+            arc.hand_catch = 'left'
+
+        """
+        Now the main algorithm. Our strategy is to maintain a queue of arcs
+        that have had hand_throw assigned. We will try to use these arcs to
+        assign hand_throw for nearby arcs that are unassigned, at which point
+        they are added to the queue. Continue this process recursively for as
+        long as we can.
+        """
         arc_queue = [arc for arc in run if arc.hand_throw is not None]
 
         if len(arc_queue) == 0:
-            widest_throws = [(arc, abs(arc.x_throw)) for arc in run]
-            widest_throws = sorted(widest_throws, key=lambda x: x[1],
-                                   reverse=True)
-            arc = widest_throws[0][0]
+            # Nothing assigned yet; assign something to get started
+            arc = max(run, key=lambda a: abs(a.x_throw))
             arc.hand_throw = 'right' if arc.x_throw < 0 else 'left'
             arc_queue = [arc]
+            if debug:
+                print(f'no throws assigned; set arc {arc.throw_id} '
+                      f'to throw from {arc.hand_throw}')
+
+        # arcs that originate within 0.05s and 10cm of one another are
+        # assumed to be a multiplex throw from the same hand:
+        mp_window_frames = 0.05 * notes['fps']
+        mp_window_pixels = 10.0 / notes['cm_per_pixel']
+
+        # assume that a hand can't make two distinct throws within 0.23s
+        # (or less) of each other:
+        if run_dict['throws per sec'] is None:
+            min_cycle_frames = 0.23 * notes['fps']
+        else:
+            min_cycle_frames = ((1.0 / run_dict['throws per sec']) * 1.3 *
+                                notes['fps'])
 
         while True:
             while len(arc_queue) > 0:
@@ -1643,9 +1805,9 @@ class HEVideoScanner:
                 Two cases for other arcs that can have throw hand assigned
                 based on assigned_arc:
                 1. arcs that are very close in time and space, which must
-                   be the same hand (multiplex throw)
+                   be from the same hand (a multiplex throw)
                 2. arcs thrown within min_cycle_frames of its throw time,
-                   which must be the opposite hand
+                   which should be from the opposite hand
                 """
                 mp_arcs = [arc for arc in run if arc.hand_throw is None
                            and (assigned_arc.f_throw - mp_window_frames) <
@@ -1657,6 +1819,9 @@ class HEVideoScanner:
                 for arc in mp_arcs:
                     arc.hand_throw = assigned_arc.hand_throw
                     arc_queue.append(arc)
+                    if debug:
+                        print(f'multiplex throw; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
 
                 close_arcs = [arc for arc in run if arc.hand_throw is None
                               and (assigned_arc.f_throw - min_cycle_frames)
@@ -1666,28 +1831,23 @@ class HEVideoScanner:
                     arc.hand_throw = 'right' if (assigned_arc.hand_throw
                                                  == 'left') else 'left'
                     arc_queue.append(arc)
+                    if debug:
+                        print(f'close timing; set arc {arc.throw_id} '
+                              f'to throw from {arc.hand_throw}')
 
-            # If there are still unassigned throws, assign one by assuming
-            # alternating hands. Find the unassigned throw that is closest
-            # in time to one that is already assigned.
-            unassigned_arcs = [arc for arc in run if arc.hand_throw is
-                               None]
+            # If there are still unassigned throws, find the one that is
+            # closest in time to one that is already assigned.
+            unassigned_arcs = [arc for arc in run if arc.hand_throw is None]
             if len(unassigned_arcs) == 0:
                 break
 
-            arc_pairs = []
-            for arc in unassigned_arcs:
-                closest_assigned = [(arc2, arc.f_throw - arc2.f_throw)
-                                    for arc2 in run if arc2.hand_throw is
-                                    not None]
-                closest_assigned = sorted(closest_assigned,
-                                          key=lambda x: abs(x[1]))
-                arc_pairs.append((arc, closest_assigned[0][0],
-                                  closest_assigned[0][1]))
-            arc_pairs = sorted(arc_pairs, key=lambda x: abs(x[2]))
-
-            arc_toassign = arc_pairs[0][0]
-            arc_assigned = arc_pairs[0][1]
+            assigned_arcs = [arc for arc in run if arc.hand_throw is not None]
+            closest_assigned = [(arc, min(assigned_arcs, key=lambda a:
+                                          abs(arc.f_throw - a.f_throw)))
+                                for arc in unassigned_arcs]
+            arc_toassign, arc_assigned = min(closest_assigned,
+                                             key=lambda p: abs(p[0].f_throw -
+                                                               p[1].f_throw))
 
             # We want to assign a throw hand to arc_toassign. First
             # check if it's part of a synchronous throw pair, in which
@@ -1705,21 +1865,156 @@ class HEVideoScanner:
                     arc_toassign2.hand_throw = 'left'
                 arc_queue.append(arc_toassign)
                 arc_queue.append(arc_toassign2)
+                if debug:
+                    print(f'sync pair; set arc {arc_toassign.throw_id} '
+                          f'to throw from {arc_toassign.hand_throw}')
+                    print(f'sync pair; set arc {arc_toassign2.throw_id} '
+                          f'to throw from {arc_toassign2.hand_throw}')
             else:
                 arc_toassign.hand_throw = 'right' if (
                         arc_assigned.hand_throw == 'left') else 'left'
                 arc_queue.append(arc_toassign)
+                if debug:
+                    print(f'alternating (from arc {arc_assigned.throw_id}); '
+                          f'set arc {arc_toassign.throw_id} to throw from '
+                          f'{arc_toassign.hand_throw}')
 
-        for arc in run:
-            if arc.prev is not None:
-                arc.prev.hand_catch = arc.hand_throw
+        # Do the same process for catching hands
 
-        # assign sequence numbers to throws
-        for throw_id, arc in enumerate(sorted(
-                        run, key=lambda x: x.f_throw), start=1):
-            arc.throw_id = throw_id
+        arc_queue = [arc for arc in run if arc.hand_catch is not None]
 
-    def find_throw_errors(self):
+        if len(arc_queue) == 0:
+            # Nothing assigned yet; assign something to get started
+            arc = max(run, key=lambda a: abs(a.x_catch))
+            arc.hand_catch = 'right' if arc.x_catch < 0 else 'left'
+            arc_queue = [arc]
+            if debug:
+                print(f'no catches assigned; set arc {arc.throw_id} '
+                      f'to catch from {arc.hand_catch}')
+
+        # assume that a hand can't make two distinct catches within 0.18s
+        # (or less) of each other:
+        if run_dict['throws per sec'] is None:
+            min_cycle_frames = 0.18 * notes['fps']
+        else:
+            min_cycle_frames = ((1.0 / run_dict['throws per sec']) * 1.0 *
+                                notes['fps'])
+
+        while True:
+            while len(arc_queue) > 0:
+                assigned_arc = arc_queue.pop()
+
+                close_arcs = [arc for arc in run if arc.hand_catch is None
+                              and (assigned_arc.f_catch - min_cycle_frames)
+                              < arc.f_catch <
+                              (assigned_arc.f_catch + min_cycle_frames)]
+                for arc in close_arcs:
+                    arc.hand_catch = 'right' if (assigned_arc.hand_catch
+                                                 == 'left') else 'left'
+                    arc_queue.append(arc)
+                    if debug:
+                        print(f'close timing; set arc {arc.throw_id} '
+                              f'to catch in {arc.hand_catch}')
+
+            # If there are still unassigned catches, find the one that is
+            # closest in time to one that is already assigned.
+            unassigned_arcs = [arc for arc in run if arc.hand_catch is None]
+            if len(unassigned_arcs) == 0:
+                break
+
+            assigned_arcs = [arc for arc in run if arc.hand_catch is not None]
+            closest_assigned = [(arc, min(assigned_arcs, key=lambda a:
+                                          abs(arc.f_catch - a.f_catch)))
+                                for arc in unassigned_arcs]
+            arc_toassign, arc_assigned = min(closest_assigned,
+                                             key=lambda p: abs(p[0].f_catch -
+                                                               p[1].f_catch))
+
+            # We want to assign a catch hand to arc_toassign. First
+            # check if it's part of a synchronous catch pair, in which
+            # case we'll assign hands based on locations.
+            sync_arcs = [arc for arc in run if
+                         abs(arc.f_catch - arc_toassign.f_catch) <
+                         mp_window_frames and arc is not arc_toassign]
+            if len(sync_arcs) > 0:
+                arc_toassign2 = sync_arcs[0]
+                if arc_toassign.x_catch > arc_toassign2.x_catch:
+                    arc_toassign.hand_catch = 'left'
+                    arc_toassign2.hand_catch = 'right'
+                else:
+                    arc_toassign.hand_catch = 'right'
+                    arc_toassign2.hand_catch = 'left'
+                arc_queue.append(arc_toassign)
+                arc_queue.append(arc_toassign2)
+                if debug:
+                    print(f'sync pair; set arc {arc_toassign.throw_id} '
+                          f'to catch in {arc_toassign.hand_catch}')
+                    print(f'sync pair; set arc {arc_toassign2.throw_id} '
+                          f'to catch in {arc_toassign2.hand_catch}')
+            else:
+                arc_toassign.hand_catch = 'right' if (
+                        arc_assigned.hand_catch == 'left') else 'left'
+                arc_queue.append(arc_toassign)
+                if debug:
+                    print(f'alternating (from arc {arc_assigned.throw_id}); '
+                          f'set arc {arc_toassign.throw_id} to catch in '
+                          f'{arc_toassign.hand_catch}')
+
+        if self._verbosity >= 3:
+            for arc in run:
+                print(f'arc {arc.throw_id} throwing from {arc.hand_throw}, '
+                      f'catching in {arc.hand_catch}')
+
+    def estimate_ball_count(self, run_dict):
+        """
+        Use some heuristics to estimate the number of balls in the pattern.
+        This can't be done by counting the number of object in the air since
+        there is usually at least one in the hands that won't be seen by
+        the tracker.
+        """
+        notes = self.notes
+        run = run_dict['throw']
+        duration = run_dict['duration']
+        tps = run_dict['throws per sec']
+        height = notes['cm_per_pixel'] * mean(arc.height for arc in run)
+
+        if tps is None:
+            # should never happen
+            N_round = N_est = 1
+        else:
+            # estimate using physics, from the height of the pattern
+            g = 980.7               # gravity in cm/s^2
+            dwell_ratio = 0.63      # assumed fraction of time hand is filled
+            N_est = 2 * dwell_ratio + tps * sqrt(8 * height / g)
+
+            same_side_throws = sum(1 for arc in run if
+                                   arc.hand_catch == arc.hand_throw)
+            total_throws = sum(1 for arc in run if arc.hand_catch is not None
+                               and arc.hand_throw is not None)
+
+            if total_throws > 0:
+                if same_side_throws > 0.5 * total_throws:
+                    # assume a fountain pattern with even number ->
+                    # round N to the nearest even number
+                    N_round = 2 * int(round(0.5 * N_est))
+                else:
+                    # assume a cascade pattern with odd number ->
+                    # round N to the nearest odd number
+                    N_round = 1 + 2 * int(round(0.5 * (N_est - 1)))
+            else:
+                N_round = int(round(N_est))
+
+        # maximum possible value based on connections between arcs:
+        N_max = sum(1 for arc in run if arc.prev is None)
+
+        run_dict['balls'] = N = min(N_round, N_max)
+        if self._verbosity >= 2:
+            print(f'duration = {duration:.1f} sec, tps = {tps:.2f} Hz, '
+                  f'height = {height:.1f} cm')
+            print(f'N_est = {N_est:.2f}, N_round = {N_round}, '
+                  f'N_max = {N_max} --> N = {N}')
+
+    def analyze_throw_errors(self, run_dict):
         """
         For each arc, calculate and store as attributes the following:
         (1) location error in throw and peak (x,y) positions
@@ -1728,47 +2023,49 @@ class HEVideoScanner:
         (3) list of close arcs the object comes nearest to
         """
         notes = self.notes
-        for arc in notes['arcs']:
+
+        run = run_dict['throw']
+        for arc in run:
             arc.error = None
             arc.ideal = None
             arc.close_arcs = None
+        if len(run) < 3:
+            return
 
-        for i in range(notes['runs']):
-            run_dict = notes['run'][i]
-            run = run_dict['throw']     # list of Ballarc objects
-            balls = run_dict['balls']
-            PoverW_ideal = 0.32
+        balls = run_dict['balls']
+        # PoverW_ideal = 0.32
 
-            if len(run) < 3:
+        sorted_run = sorted(run, key=lambda a: a.throw_id)
+
+        for throw_idx in range(2, len(run)):
+            arc = sorted_run[throw_idx]
+
+            # set of other arcs likeliest to collide with this one:
+            if balls % 2 == 0:
+                window = [-2, 2]
+            else:
+                window = [-2, -1, 1, 2]
+            window = [x for x in window if 0 <= (throw_idx + x) < len(run)]
+            if len(window) < 2:
                 continue
-            sorted_run = sorted(run, key=lambda a: a.throw_id)
 
-            for throw_idx in range(2, len(run)):
-                arc = sorted_run[throw_idx]
+            N = X = X2 = F = XF = C = 0
+            for x in window:
+                arc2 = sorted_run[throw_idx + x]
+                N += 1
+                X += x
+                X2 += x * x
+                F += arc2.f_throw
+                XF += x * arc2.f_throw
+                C += arc2.c     # y-coordinate (pixels) at peak
 
-                # set of other arcs likeliest to collide with this one:
-                if balls % 2 == 0:
-                    window = [-2, 2]
-                else:
-                    window = [-2, -1, 1, 2]
-                window = [x for x in window if 0 <= (throw_idx + x) < len(run)]
+            # print('len(window) = {}'.format(len(window)))
 
-                N = X = X2 = F = XF = C = 0
-                for x in window:
-                    arc2 = sorted_run[throw_idx + x]
-                    N += 1
-                    X += x
-                    X2 += x * x
-                    F += arc2.f_throw
-                    XF += x * arc2.f_throw
-                    C += arc2.c     # y-coordinate (pixels) at peak
-
-                f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
-                c_ideal = C / N
-                e_ideal = arc.e
-
-
-
+            """
+            f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
+            c_ideal = C / N
+            e_ideal = arc.e
+            """
 
             """
             if sum(1 for t in run if t.hand_catch == 'left') == 0:
@@ -1777,12 +2074,12 @@ class HEVideoScanner:
                 continue
 
             # find the target width and height of the pattern
-            catch_left_avg = statistics.mean(t.x_catch for t in run
+            catch_left_avg = mean(t.x_catch for t in run
                                              if t.hand_catch == 'left')
-            catch_right_avg = statistics.mean(t.x_catch for t in run
+            catch_right_avg = mean(t.x_catch for t in run
                                               if t.hand_catch == 'right')
             width = catch_left_avg - catch_right_avg
-            height = statistics.mean(t.height for t in run)
+            height = mean(t.height for t in run)
 
             if balls == 9:
                 ideal_x_throw = (0.5 * width) * 0.55
@@ -1953,6 +2250,12 @@ class HEVideoScanner:
 
 # -----------------------------------------------------------------------------
 
+class HEScanException(Exception):
+    def __init__(self, message=None):
+        super().__init__(message)
+
+# -----------------------------------------------------------------------------
+
 
 def play_video(filename, notes=None, outfilename=None, startframe=0,
                keywait=False):
@@ -1992,7 +2295,6 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
     cv2.namedWindow(filename, cv2.WINDOW_NORMAL)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    # framenum = framereads = startframe
     framenum = framereads = 0
     show_arc_id = False
 
@@ -2009,12 +2311,14 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
         if framenum >= startframe:
             if framenum in body:
-                x, y, w, h = notes['body'][framenum]
+                # draw torso bounding box
+                x, y, w, h, detected = notes['body'][framenum]
                 x = int(round(x))
                 y = int(round(y))
                 w = int(round(w))
                 h = int(round(h))
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                color = (255, 0, 0) if detected else (0, 0, 255)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
 
             if framenum in tags:
                 for tag in tags[framenum]:
@@ -2024,14 +2328,15 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                                int(round(tag.radius)), color, 1)
 
             for arc in arcs:
-                if notes['version'] < 3:
+                if notes['step'] < 5:
                     start, end = arc.get_frame_range(notes)
+                    print('start = {}, end = {}'.format(start, end))
                 else:
-                    start, end = arc.get_tag_range()
+                    start, end = arc.f_throw, arc.f_catch
                 if start <= framenum <= end:
                     x, y = arc.get_position(framenum, notes)
-                    x = int(round(x))
-                    y = int(round(y))
+                    x = int(x + 0.5)
+                    y = int(y + 0.5)
                     if (notes is not None and len(arc.tags) <
                             notes['scanner_params']['min_tags_per_arc']):
                         temp, _ = arc.get_tag_range()
@@ -2045,13 +2350,24 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
                     color = (0, 255, 0) if arc_has_tag else (0, 0, 255)
                     cv2.circle(frame, (x, y), 2, color, -1)
+
                     if show_arc_id:
+                        arc_id = (arc.id_ if notes['step'] < 4
+                                  else arc.throw_id)
                         cv2.rectangle(frame, (x+10, y+5),
                                       (x+40, y-4), (0, 0, 0), -1)
-                        cv2.putText(frame, format(arc.id_, ' 4d'),
+                        cv2.putText(frame, format(arc_id, ' 4d'),
                                     (x+13, y+4),
-                                    font, 0.6, (255, 255, 255), 1,
+                                    font, 0.3, (255, 255, 255), 1,
                                     cv2.LINE_AA)
+
+                    if arc.x_origin is not None:
+                        # find (x_origin, y_origin) in screen coordinates:
+                        c = cos(notes['camera_tilt'])
+                        s = sin(notes['camera_tilt'])
+                        xo_scr = int(arc.x_origin*c + arc.y_origin*s + 0.5)
+                        yo_scr = int(-arc.x_origin*s + arc.y_origin*c + 0.5)
+                        cv2.circle(frame, (xo_scr, yo_scr), 3, (255, 0, 0), -1)
 
             cv2.rectangle(frame, (3, 3), (80, 27), (0, 0, 0), -1)
             cv2.putText(frame, format(framenum, ' 7d'), (10, 20), font, 0.5,
@@ -2071,7 +2387,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                 if keycode == ord('q'):     # Q on keyboard exits
                     stop_playback = True
                     break
-                elif keycode == ord('i'):
+                elif keycode == ord('i'):   # I toggles throw IDs
                     show_arc_id = not show_arc_id
                     break
                 if not keywait or keycode != 0xFF:
@@ -2097,47 +2413,50 @@ testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
-    # _filename = 'movies/juggling_test_5.mov'
-    _filename = 'movies/TBTB3_9balls.mov'
-    # _filename = 'movies/TBTB3_9balls_temp.mp4'
+    _filename = 'movies/juggling_test_5.mov'
+    # _filename = 'movies/TBTB3_9balls.mov'
     # _filename = 'movies/GOPR0463.MP4'
     # _filename = 'movies/GOPR0466.MP4'
     # _filename = 'movies/GOPR0467.MP4'
-    _filename = 'movies/GOPR0531.MP4'
+    # _filename = 'movies/GOPR0493.MP4'
     # _filename = 'movies/8ballsLonger.mov'
     # _filename = 'movies/vert_test.mp4'
+    _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/GOPR0531_640x480.mp4'
-    _scanvideo = None
+    # _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/vert_test_640x480.mp4'
 
     watch_video = False
 
     # print(cv2.getBuildInformation())
 
     if watch_video:
-        notes_version = 2
+        notes_step = 4
+        start_frame = 0
 
-        if 1 <= notes_version <= 4:
+        if 1 <= notes_step <= 5:
             _filepath = os.path.abspath(_filename)
             _dirname = os.path.dirname(_filepath)
             _hawkeye_dir = os.path.join(_dirname, '__Hawkeye__')
             _basename = os.path.basename(_filepath)
             _basename_noext = os.path.splitext(_basename)[0]
 
-            if notes_version == 4:
+            if notes_step == 5:
                 _basename_notes = _basename_noext + '_notes.pkl'
             else:
                 _basename_notes = _basename_noext + '_notes{}.pkl'.format(
-                                                            notes_version)
+                                                            notes_step)
             _filepath_notes = os.path.join(_hawkeye_dir, _basename_notes)
 
             mynotes = HEVideoScanner.read_notes(_filepath_notes)
         else:
             mynotes = None
         play_video(_filename, notes=mynotes, outfilename=None,
-                   startframe=0, keywait=True)
+                   startframe=start_frame, keywait=True)
     else:
-        startstep = 4
-        endstep = 4
+        startstep = 5
+        endstep = 5
         verbosity = 2
 
         scanner = HEVideoScanner(_filename, scanvideo=_scanvideo)

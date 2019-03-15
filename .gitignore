@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+.mypy_cache/
+admin/
+movies/
+packaging/osx/build/
+packaging/osx/dist/
+packaging/osx/DropDMG.app
+packaging/windows/build/
+packaging/windows/dist/
+packaging/windows/Output/
