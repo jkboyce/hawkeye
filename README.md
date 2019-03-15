@@ -54,7 +54,7 @@ to help generate training data. Such a network might operate in close to real ti
 interesting applications.
 
 ### References
-- Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", arXiv:1704.02781, 2017.
+- Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", [arXiv:1704.02781](https://arxiv.org/abs/1704.02781), 2017.
 - Benfold, B. and Reid, I., "Stable Multi-target Tracking in Real-time Surveillance Video", Proceedings of the 2011 IEEE Conference on Computer Vision and Pattern Recognition, pp. 3457-3464, June 2011.
 - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal Processing Magazine, vol. 13, no. 6, pp. 47–60,
 November 1996.
