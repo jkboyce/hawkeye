@@ -22,9 +22,9 @@ recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_
 Below are some sample videos to demo Hawkeye in action. Drag and drop a video onto the Videos: box in the application,
 and note that it may take a few minutes to analyze videos of this length.
 
-- [JB 5 balls](https://storage.googleapis.com/hawkeye-dl/juggling_test_5.mov)
 - [AG 9 balls](https://storage.googleapis.com/hawkeye-dl/TBTB3_9balls.mov)
 - [AG 8 balls](https://storage.googleapis.com/hawkeye-dl/TBTB3_8balls.mov)
+- [JB 5 balls](https://storage.googleapis.com/hawkeye-dl/juggling_test_5.mov)
 
 ### Tracking details
 The key challenge in this project was to build an object tracker that doesn't rely on chroma keying, object tagging,
