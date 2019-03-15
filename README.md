@@ -50,7 +50,7 @@ algorithm (reference below) but we get higher reliability than their published n
 before applying the EM algorithm, and by being careful with the merging and pruning steps.
 
 A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm
-to help generate training data. Such a network might operate in close to real time, which could enable a number of
+to help generate training data. Such a network might operate in close to real time which could enable some
 interesting applications.
 
 ### References
