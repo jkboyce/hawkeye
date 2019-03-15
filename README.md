@@ -14,7 +14,9 @@ _(Note: If launching the app gives an "identity of the developer cannot be confi
 app and select Open, then select Open in the dialog box. After it launches successfully the warning message won't
 appear again.)_
 
-[Hawkeye-1.0.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.0.exe) -- Windows installer
+[Hawkeye-1.0.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.0.exe) -- Windows installer. _(Note: If you get
+playback errors in the Hawkeye video player, it is likely you need to install video codecs on your computer. I
+recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_k-lite_codec_pack_standard.htm).)_
 
 ### Sample videos
 Below are some sample videos to demo Hawkeye in action. Drag and drop a video onto the Videos: box in the application,
@@ -26,7 +28,7 @@ and note that it may take a few minutes to analyze videos of this length.
 
 ### Tracking details
 The key challenge in this project was to build an object tracker that doesn't rely on chroma keying, object tagging,
-or any special recording equipment. The goal was to be able to track thrown objects in ordinary video footage,
+or any special recording equipment. The goal was to track thrown objects in ordinary video footage,
 captured with ordinary cameras, under a variety of conditions.
 
 The general problem of tracking multiple objects in unconstrained video footage is quite difficult, and state of the
