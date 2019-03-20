@@ -1471,7 +1471,7 @@ class HEVideoScanner:
     def analyze_juggling(self):
         """
         Build out a higher-level description of the juggling using the
-        individual throw arcs we found in steps 1-3.
+        individual throw arcs we found in steps 1-4.
 
         Args:
             None
