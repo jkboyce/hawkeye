@@ -22,9 +22,9 @@ recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_
 Below are some sample videos to demo Hawkeye in action. Drag and drop a video onto the Videos: box in the application,
 and note that it may take a few minutes to analyze videos of this length.
 
-- [JB 5 balls](https://storage.googleapis.com/hawkeye-dl/juggling_test_5.mov)
 - [AG 9 balls](https://storage.googleapis.com/hawkeye-dl/TBTB3_9balls.mov)
 - [AG 8 balls](https://storage.googleapis.com/hawkeye-dl/TBTB3_8balls.mov)
+- [JB 5 balls](https://storage.googleapis.com/hawkeye-dl/juggling_test_5.mov)
 
 ### Tracking details
 The key challenge in this project was to build an object tracker that doesn't rely on chroma keying, object tagging,
@@ -50,11 +50,11 @@ algorithm (reference below) but we get higher reliability than their published n
 before applying the EM algorithm, and by being careful with the merging and pruning steps.
 
 A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm
-to help generate training data. Such a network might operate in close to real time, which could enable a number of
+to help generate training data. Such a network might operate in close to real time which could enable some
 interesting applications.
 
 ### References
-- Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", arXiv:1704.02781, 2017.
+- Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", [arXiv:1704.02781](https://arxiv.org/abs/1704.02781), 2017.
 - Benfold, B. and Reid, I., "Stable Multi-target Tracking in Real-time Surveillance Video", Proceedings of the 2011 IEEE Conference on Computer Vision and Pattern Recognition, pp. 3457-3464, June 2011.
 - Moon, T.K., "The Expectation Maximization Algorithm”, IEEE Signal Processing Magazine, vol. 13, no. 6, pp. 47–60,
 November 1996.
