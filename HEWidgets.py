@@ -404,15 +404,13 @@ class HEVideoList(QListWidget):
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        selectitem = None
-        workerfree = (self.window.worker_processing_queue_length == 0)
-        for url in e.mimeData().urls():
-            filepath = os.path.abspath(url.toLocalFile())
-            item = self.addVideo(filepath)
-            if workerfree and selectitem is None:
-                selectitem = item
-        if selectitem is not None:
-            selectitem.setSelected(True)
+        paths = [os.path.abspath(url.toLocalFile()) for url in e.mimeData().urls()]
+        paths.sort(key=lambda p: os.path.basename(p))
+
+        for path in paths:
+            workerfree = not self.window.isWorkerBusy()
+            item = self.addVideo(path)
+            item.setSelected(workerfree)
 
     def addVideo(self, filepath):
         if not os.path.isfile(filepath):
