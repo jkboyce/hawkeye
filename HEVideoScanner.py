@@ -765,7 +765,10 @@ class HEVideoScanner:
                 t = tag.frame - arc.f_peak
                 x = tag.x
                 y = tag.y
-                w = tag.weight[arc]
+                try:
+                    w = tag.weight[arc]
+                except AttributeError:
+                    w = 1.0
                 T0 += w
                 T1 += w * t
                 T2 += w * t**2
@@ -988,13 +991,7 @@ class HEVideoScanner:
         """
 
         while keep_iterating:
-            if self._verbosity >= 2:
-                print('estimating camera tilt...')
             self.estimate_camera_tilt(arcs)
-            if self._verbosity >= 2:
-                print('camera tilt = {:.6f} degrees'.format(
-                                degrees(notes['camera_tilt'])))
-
             if self._verbosity >= 2:
                 print('fitting arcs...')
             self.fit_arcs(arcs)
@@ -1022,6 +1019,13 @@ class HEVideoScanner:
             self.fit_arcs(arcs)
 
         self.clean_notes()
+
+        # camera tilt estimation using final tag/arc assignments
+        self.estimate_camera_tilt(arcs)
+        if self._verbosity >= 2:
+            print('fitting arcs...')
+        self.fit_arcs(arcs)
+
         arcs.sort(key=lambda x: x.f_peak)
         if self._verbosity >= 1:
             print('EM done: {} arcs before, {} after'.format(arcs_before,
@@ -1096,8 +1100,10 @@ class HEVideoScanner:
         Returns:
             None
         """
-        notes = self.notes
+        if self._verbosity >= 2:
+            print('estimating camera tilt...')
 
+        notes = self.notes
         tilt_sum = 0.0
         tilt_count = 0
 
@@ -1110,7 +1116,10 @@ class HEVideoScanner:
                 t = tag.frame - arc.f_peak
                 x = tag.x
                 y = tag.y
-                w = tag.weight[arc]
+                try:
+                    w = tag.weight[arc]
+                except AttributeError:
+                    w = 1.0
                 T0 += w
                 T1 += w * t
                 T2 += w * t**2
@@ -1153,6 +1162,9 @@ class HEVideoScanner:
 
         notes['camera_tilt'] = ((tilt_sum / tilt_count) if tilt_count > 0
                                 else 0.0)
+        if self._verbosity >= 2:
+            print('camera tilt = {:.6f} degrees'.format(
+                            degrees(notes['camera_tilt'])))
 
     def merge_arcs(self, arcs):
         """
