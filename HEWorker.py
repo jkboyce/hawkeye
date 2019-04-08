@@ -335,7 +335,7 @@ class HEWorker(QObject):
                         p.terminate()
                         return 1
 
-            results = f'FFprobe process ended, return code {p.returncode}\n\n'
+            results = f'FFprobe process ended, return code {p.returncode}\n'
             self.sig_output.emit(file_id, results)
 
             if p.returncode != 0:
@@ -376,7 +376,8 @@ class HEWorker(QObject):
                     f'width = {width_orig}, '
                     f'scaling to width = {width} (DAR = {dar})\n')
             self.sig_output.emit(file_id, f'fps = {fps_raw} = {fps}\n')
-            self.sig_output.emit(file_id, f'frame count = {framecount}\n')
+            self.sig_output.emit(file_id,
+                                 f'estimated frame count = {framecount}\n\n')
 
             # fill in the same notes fields as HEVideoScanner's step 1
             notes['fps'] = fps
