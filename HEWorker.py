@@ -653,7 +653,10 @@ class HEWorker(QObject):
             self.sig_error.emit(file_id, f'Error: {err}')
             return 1
         except HEAbortException:
-            # worker thread got an abort signal during processing
+            # worker thread got an abort signal during processing;
+            # the scanner writes the notes file as an atomic operation after
+            # processing is complete, so no need to delete a partially-written
+            # file here.
             return 1
         finally:
             sys.stdout.close()
