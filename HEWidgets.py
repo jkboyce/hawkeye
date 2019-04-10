@@ -471,7 +471,6 @@ class HEVideoContext(QObject):
                                    flags=QMediaPlayer.VideoSurface)
         self.player.stateChanged.connect(self.mediaStateChanged)
         self.player.positionChanged.connect(self.positionChanged)
-        self.player.durationChanged.connect(self.durationChanged)
         self.player.error.connect(self.handlePlayerError)
 
         self.graphicsvideoitem = QGraphicsVideoItem()
@@ -523,20 +522,6 @@ class HEVideoContext(QObject):
             prev = self.window.positionSlider.blockSignals(True)
             self.window.positionSlider.setValue(position)
             self.window.positionSlider.blockSignals(prev)
-
-    @Slot(int)
-    def durationChanged(self, duration):
-        """
-        Signaled by the QMediaPlayer when the movie duration changes. The
-        duration is given in milliseconds.
-        """
-        if duration > 0:
-            # QMediaPlayer intermittently reports bad durations in the form of
-            # large negative values. Hence the check.
-            self.duration = duration
-
-            if self.isActive():
-                self.window.positionSlider.setRange(0, duration)
 
     @Slot()
     def handlePlayerError(self):
