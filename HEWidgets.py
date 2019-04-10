@@ -261,6 +261,23 @@ class HEVideoView(QGraphicsView):
                         painter.drawLine(round(x1), round(y1),
                                          round(x2), round(y2))
 
+                # draw hand's carry from previous catch, if any
+                if prefs['carries'] and arc.prev is not None:
+                    xt, yt = arc.get_position(arc.f_throw, notes)
+                    dxt, dyt = mapToDisplayVideo(xt, yt)
+                    xt, yt = self.mapToView(dxt, dyt)
+                    xc, yc = arc.prev.get_position(arc.prev.f_catch, notes)
+                    dxc, dyc = mapToDisplayVideo(xc, yc)
+                    xc, yc = self.mapToView(dxc, dyc)
+
+                    painter.setPen(Qt.red)
+                    painter.setBrush(Qt.red)
+                    painter.setOpacity(1.0)
+                    painter.drawEllipse(QPoint(xt, yt), 2, 2)
+                    painter.drawEllipse(QPoint(xc, yc), 2, 2)
+                    painter.drawLine(round(xt), round(yt),
+                                     round(xc), round(yc))
+
             # draw throw number next to arc position
             if prefs['throw_labels']:
                 try:
