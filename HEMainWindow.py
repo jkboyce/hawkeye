@@ -744,9 +744,9 @@ class HEMainWindow(QMainWindow):
         self.forwardButton.setEnabled(item.vc.has_played)
         self.playerErrorLabel.setText('')
         if item.vc.duration is not None:
-            self.positionSlider.setRange(0, item.vc.duration)
             # block signals so we don't trigger setPosition()
             prev = self.positionSlider.blockSignals(True)
+            self.positionSlider.setRange(0, item.vc.duration)
             self.positionSlider.setValue(item.vc.position)
             self.positionSlider.blockSignals(prev)
 
