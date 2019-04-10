@@ -221,7 +221,9 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Video scanner done')
 
-    # --- Step 1: Get video metadata ------------------------------------------
+    # --------------------------------------------------------------------------
+    #  Step 1: Get video metadata
+    # --------------------------------------------------------------------------
 
     def get_video_metadata(self):
         """
@@ -256,9 +258,11 @@ class HEVideoScanner:
         if self._verbosity >= 2:
             print('width = {}, height = {}, fps = {}'.format(
                 framewidth, frameheight, fps))
-            print(f'estimated frame count = {framecount}')
+            print(f'estimated frame count = {framecount}\n')
 
-    # --- Step 2: Extract features from video ---------------------------------
+    # --------------------------------------------------------------------------
+    #  Step 2: Extract features from video
+    # --------------------------------------------------------------------------
 
     def detect_objects(self, display=False):
         """
@@ -488,9 +492,11 @@ class HEVideoScanner:
             cv2.destroyAllWindows()
 
         if self._verbosity >= 1:
-            print(f'Object detection done: {tag_count} detections')
+            print(f'Object detection done: {tag_count} detections\n')
 
-    # --- Step 3: Build initial set of arcs -----------------------------------
+    # --------------------------------------------------------------------------
+    #  Step 3: Build initial set of arcs
+    # --------------------------------------------------------------------------
 
     def build_initial_arcs(self):
         """
@@ -527,7 +533,7 @@ class HEVideoScanner:
         notes['arcs'] = arcs
 
         if self._verbosity >= 1:
-            print('Build initial arcs done: {} arcs created'.format(len(arcs)))
+            print(f'Build initial arcs done: {len(arcs)} arcs created\n')
 
     def construct_arcs(self, maxcount=None):
         """
@@ -655,7 +661,7 @@ class HEVideoScanner:
                             done_making_arcs = True
 
                         if self._verbosity >= 2 and maxcount is not None:
-                            print(f'made arc number {len(arclist)}, '
+                            print(f'  made arc number {len(arclist)}, '
                                   f'frame_peak = {arc.f_peak:.1f}, '
                                   f'accel = {arc.e:.3f}')
                     else:
@@ -685,7 +691,7 @@ class HEVideoScanner:
                 for tag in arc.tags:
                     tag.done = True
             print(
-                'done: {} of {} tags attached to {} arcs'.format(
+                '  done: {} of {} detections attached to {} arcs'.format(
                     sum(1 for t in tagqueue if t.done is True), len(tagqueue),
                     len(arclist)))
 
@@ -948,7 +954,9 @@ class HEVideoScanner:
                 print('g (pixels/frame^2) = {:.6f}, cm/pixel = {:.6f}'.format(
                     notes['g_px_per_frame_sq'], notes['cm_per_pixel']))
 
-    # --- Step 4: Refine arcs with EM algorithm -------------------------------
+    # --------------------------------------------------------------------------
+    #  Step 4: Refine arcs with EM algorithm
+    # --------------------------------------------------------------------------
 
     def EM_optimize(self):
         """
@@ -1028,8 +1036,8 @@ class HEVideoScanner:
 
         arcs.sort(key=lambda x: x.f_peak)
         if self._verbosity >= 1:
-            print('EM done: {} arcs before, {} after'.format(arcs_before,
-                                                             len(arcs)))
+            print('EM done: {} arcs before, {} after\n'.format(arcs_before,
+                                                               len(arcs)))
 
     def calculate_weights(self, arcs):
         """
@@ -1163,7 +1171,7 @@ class HEVideoScanner:
         notes['camera_tilt'] = ((tilt_sum / tilt_count) if tilt_count > 0
                                 else 0.0)
         if self._verbosity >= 2:
-            print('camera tilt = {:.6f} degrees'.format(
+            print('  camera tilt = {:.6f} degrees'.format(
                             degrees(notes['camera_tilt'])))
 
     def merge_arcs(self, arcs):
@@ -1461,9 +1469,8 @@ class HEVideoScanner:
                 tags_remaining += 1
 
         if self._verbosity >= 2:
-            print("cleaning done: {} tags removed, {} tags remaining, "
-                  "{} arcs removed".format(tags_removed, tags_remaining,
-                                           arcs_removed))
+            print(f'cleaning done: {tags_removed} detections removed, '
+                  f'{tags_remaining} remaining, {arcs_removed} arcs removed')
 
     def is_tag_good(self, tag):
         if tag.arc is not None:
@@ -1478,7 +1485,9 @@ class HEVideoScanner:
                    notes['scanner_params']['max_distance_pixels']
                    for arc in tag.weight)
 
-    # --- Step 5: Analyze juggling patterns -----------------------------------
+    # --------------------------------------------------------------------------
+    #  Step 5: Analyze juggling patterns
+    # --------------------------------------------------------------------------
 
     def analyze_juggling(self):
         """
@@ -2135,7 +2144,9 @@ class HEVideoScanner:
 
                 arc.close_arcs = close_arcs
 
-    # --- Non-member functions ------------------------------------------------
+    # --------------------------------------------------------------------------
+    #  Non-member functions
+    # --------------------------------------------------------------------------
 
     def defaultScannerParams():
         """
@@ -2393,10 +2404,8 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
 # -----------------------------------------------------------------------------
 
-"""
-This entry point isn't used by the Hawkeye application but is useful for
-testing and debugging the video scanner.
-"""
+# This entry point isn't used by the Hawkeye application but is useful for
+# testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
