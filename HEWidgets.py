@@ -204,8 +204,8 @@ class HEVideoView(QGraphicsView):
             """
 
             if framenum == start:
-                # special things to draw when we're at the exact
-                # starting frame of a throw
+                # special things to draw when we're at the exact starting
+                # frame of a throw
 
                 # draw ideal throw arc
                 if prefs['ideal_throws'] and arc.ideal is not None:
@@ -286,8 +286,7 @@ class HEVideoView(QGraphicsView):
                     dx, dy = mapToDisplayVideo(x, y)
                     arc_x, arc_y = self.mapToView(dx, dy)
                     painter.setOpacity(1.0)
-                    painter.fillRect(arc_x+15, arc_y-5, 25, 9,
-                                     Qt.black)
+                    painter.fillRect(arc_x+15, arc_y-5, 25, 9, Qt.black)
                     font = painter.font()
                     font.setFamily('Courier')
                     font.setPixelSize(9)
@@ -412,24 +411,6 @@ class HEVideoList(QListWidget):
         self.setAcceptDrops(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
 
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dragMoveEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e):
-        paths = [os.path.abspath(url.toLocalFile())
-                 for url in e.mimeData().urls()]
-        paths.sort(key=lambda p: os.path.basename(p))
-
-        for path in paths:
-            workerfree = not self.window.isWorkerBusy()
-            item = self.addVideo(path)
-            item.setSelected(workerfree)
-
     def addVideo(self, filepath):
         if not os.path.isfile(filepath):
             return None
@@ -448,6 +429,28 @@ class HEVideoList(QListWidget):
         self.window.worker_processing_queue_length += 1
         self.window.setWorkerBusyIcon()
         return item
+
+    # -------------------------------------------------------------------------
+    #  QListWidget overrides
+    # -------------------------------------------------------------------------
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        paths = [os.path.abspath(url.toLocalFile())
+                 for url in e.mimeData().urls()]
+        paths.sort(key=lambda p: os.path.basename(p))
+
+        for path in paths:
+            workerfree = not self.window.isWorkerBusy()
+            item = self.addVideo(path)
+            item.setSelected(workerfree)
 
     def sizeHint(self):
         return QSize(150, 100)
@@ -471,7 +474,6 @@ class HEVideoContext(QObject):
                                    flags=QMediaPlayer.VideoSurface)
         self.player.stateChanged.connect(self.mediaStateChanged)
         self.player.positionChanged.connect(self.positionChanged)
-        self.player.durationChanged.connect(self.durationChanged)
         self.player.error.connect(self.handlePlayerError)
 
         self.graphicsvideoitem = QGraphicsVideoItem()
@@ -523,20 +525,6 @@ class HEVideoContext(QObject):
             prev = self.window.positionSlider.blockSignals(True)
             self.window.positionSlider.setValue(position)
             self.window.positionSlider.blockSignals(prev)
-
-    @Slot(int)
-    def durationChanged(self, duration):
-        """
-        Signaled by the QMediaPlayer when the movie duration changes. The
-        duration is given in milliseconds.
-        """
-        if duration > 0:
-            # QMediaPlayer intermittently reports bad durations in the form of
-            # large negative values. Hence the check.
-            self.duration = duration
-
-            if self.isActive():
-                self.window.positionSlider.setRange(0, duration)
 
     @Slot()
     def handlePlayerError(self):
