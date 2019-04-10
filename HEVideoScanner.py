@@ -1483,7 +1483,7 @@ class HEVideoScanner:
     def analyze_juggling(self):
         """
         Build out a higher-level description of the juggling using the
-        individual throw arcs we found in steps 1-3.
+        individual throw arcs we found in steps 1-4.
 
         Args:
             None
@@ -1515,12 +1515,26 @@ class HEVideoScanner:
             run_dict['throws'] = len(run)
             run_dict['throw'] = run
 
+            f_firstthrow = min(arc.f_throw for arc in run)
+            f_lastthrow = max(arc.f_throw for arc in run)
+            f_lastcatch = max(arc.f_catch for arc in run)
+            run_dict['frame range'] = (f_firstthrow, f_lastcatch)
+            run_dict['duration'] = (f_lastcatch - f_firstthrow) / notes['fps']
+
+            if f_lastthrow != f_firstthrow:
+                run_dict['throws per sec'] = (
+                        (run_dict['throws'] - 1) /
+                        ((f_lastthrow - f_firstthrow) / notes['fps']))
+            else:
+                # likely just a single throw in the run
+                run_dict['throws per sec'] = None
+
             if self._verbosity >= 2:
                 print(f'--- Analyzing run {run_id} ------------------------')
                 print(f'Number of arcs detected = {run_dict["throws"]}')
 
-            self.connect_arcs(run_dict)
             self.assign_hands(run_dict)
+            self.connect_arcs(run_dict)
             self.estimate_ball_count(run_dict)
             # self.analyze_throw_errors(run_dict)
 
@@ -1622,7 +1636,7 @@ class HEVideoScanner:
 
     def find_runs(self):
         """
-        Separate arcs into a set of runs, by assuming that two arcs that
+        Separate arcs into a list of runs, by assuming that two arcs that
         overlap in time are part of the same run.
 
         Args:
@@ -1668,76 +1682,6 @@ class HEVideoScanner:
         notes['runs'] = len(runs)
         return runs
 
-    def connect_arcs(self, run_dict):
-        """
-        Try to connect arcs together that represent subsequent throws for
-        a given ball. Do this by filling in arc.prev and arc.next for each
-        arc in a given run, forming a linked list for each ball in the pattern.
-
-        Since some arcs are not detected (e.g. very low throws), this process
-        can often make mistakes.
-
-        Args:
-            run_dict(dict):
-                dictionary of information for a given run
-        Returns:
-            None
-        """
-        notes = self.notes
-        run = run_dict['throw']
-        f_firstthrow = min(arc.f_throw for arc in run)
-        f_lastthrow = max(arc.f_throw for arc in run)
-        f_lastcatch = max(arc.f_catch for arc in run)
-        run_dict['frame range'] = (f_firstthrow, f_lastcatch)
-        run_dict['duration'] = (f_lastcatch - f_firstthrow) / notes['fps']
-
-        if f_lastthrow != f_firstthrow:
-            run_dict['throws per sec'] = (
-                    (run_dict['throws'] - 1) /
-                    ((f_lastthrow - f_firstthrow) / notes['fps']))
-
-            # link together arcs over time that correspond to throws for
-            # the same ball. This will allow us to determine the pattern
-            # for this run.
-            min_dwell_frames = 0.1 * notes['fps']
-            likely_dwell_frames = notes['fps'] / run_dict['throws per sec']
-            for arc in run:
-                possible_nexts = [arc2 for arc2 in run
-                                  if (arc2.f_throw >
-                                      (arc.f_catch + min_dwell_frames))
-                                  and arc2.prev is None]
-                if len(possible_nexts) == 0:
-                    arc.next = None
-                elif len(possible_nexts) == 1:
-                    arc.next = possible_nexts[0]
-                    possible_nexts[0].prev = arc
-                else:
-                    likely_nexts = [(arc2, abs(arc2.f_throw - arc.f_catch -
-                                               likely_dwell_frames))
-                                    for arc2 in possible_nexts]
-                    likely_nexts = sorted(likely_nexts, key=lambda i: i[1])
-                    """
-                    Assume that the next arc is either the first or second
-                    element of likely_nexts. If the first is much better in
-                    terms of timing then choose it. Otherwise compare
-                    throwing and catching positions to break the tie.
-                    """
-                    if likely_nexts[1][1] > 0.5 * likely_dwell_frames:
-                        arc.next = likely_nexts[0][0]
-                        likely_nexts[0][0].prev = arc
-                    elif (abs(likely_nexts[0][0].x_throw - arc.x_catch) <
-                            abs(likely_nexts[1][0].x_throw - arc.x_catch)):
-                        arc.next = likely_nexts[0][0]
-                        likely_nexts[0][0].prev = arc
-                    else:
-                        arc.next = likely_nexts[1][0]
-                        likely_nexts[1][0].prev = arc
-        else:
-            # likely just a single throw in the run
-            run_dict['throws per sec'] = None
-            for arc in run:
-                arc.next = arc.prev = None
-
     def assign_hands(self, run_dict):
         """
         Assign throwing and catching hands to every arc in a given run. This
@@ -1755,7 +1699,7 @@ class HEVideoScanner:
         run = run_dict['throw']
         debug = False
 
-        if self._verbosity >= 2:
+        if self._verbosity >= 3:
             print('Assigning hands to arcs...')
 
         # Start by making high-probability assignments of catches and throws.
@@ -1976,6 +1920,37 @@ class HEVideoScanner:
             for arc in run:
                 print(f'arc {arc.throw_id} throwing from {arc.hand_throw}, '
                       f'catching in {arc.hand_catch}')
+
+    def connect_arcs(self, run_dict):
+        """
+        Try to connect arcs together that represent subsequent throws for
+        a given ball. Do this by filling in arc.prev and arc.next for each
+        arc in a given run, forming a linked list for each ball in the pattern.
+        A value of None for arc.prev or arc.next signifies the first or last
+        arc for that ball, within the current run.
+
+        Since some arcs are not detected (e.g. very low throws), this process
+        can often make mistakes.
+
+        Args:
+            run_dict(dict):
+                dictionary of information for a given run
+        Returns:
+            None
+        """
+        run = run_dict['throw']
+
+        for arc in run:
+            arc.next = None
+
+        for arc in run:
+            # try to find the last arc caught by the hand `arc` throws with
+            arc.prev = max((arc_prev for arc_prev in run
+                            if (arc_prev.f_catch < arc.f_throw and
+                                arc_prev.hand_catch == arc.hand_throw)),
+                           key=lambda a: a.f_catch, default=None)
+            if arc.prev is not None:
+                arc.prev.next = arc
 
     def estimate_ball_count(self, run_dict):
         """
@@ -2425,19 +2400,12 @@ testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
-    _filename = 'movies/juggling_test_5.mov'
+    #_filename = 'movies/juggling_test_5.mov'
     # _filename = 'movies/TBTB3_9balls.mov'
-    # _filename = 'movies/GOPR0463.MP4'
-    # _filename = 'movies/GOPR0466.MP4'
-    # _filename = 'movies/GOPR0467.MP4'
-    # _filename = 'movies/GOPR0493.MP4'
-    # _filename = 'movies/8ballsLonger.mov'
-    # _filename = 'movies/vert_test.mp4'
-    _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
+    _filename = 'movies/GOPR0553.MP4'
+    #_scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/GOPR0531_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/vert_test_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/GOPR0553_640x480.mp4'
 
     watch_video = False
 
