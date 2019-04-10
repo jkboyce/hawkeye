@@ -204,8 +204,8 @@ class HEVideoView(QGraphicsView):
             """
 
             if framenum == start:
-                # special things to draw when we're at the exact
-                # starting frame of a throw
+                # special things to draw when we're at the exact starting
+                # frame of a throw
 
                 # draw ideal throw arc
                 if prefs['ideal_throws'] and arc.ideal is not None:
@@ -286,8 +286,7 @@ class HEVideoView(QGraphicsView):
                     dx, dy = mapToDisplayVideo(x, y)
                     arc_x, arc_y = self.mapToView(dx, dy)
                     painter.setOpacity(1.0)
-                    painter.fillRect(arc_x+15, arc_y-5, 25, 9,
-                                     Qt.black)
+                    painter.fillRect(arc_x+15, arc_y-5, 25, 9, Qt.black)
                     font = painter.font()
                     font.setFamily('Courier')
                     font.setPixelSize(9)
@@ -412,24 +411,6 @@ class HEVideoList(QListWidget):
         self.setAcceptDrops(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
 
-    def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dragMoveEvent(self, e):
-        if e.mimeData().hasUrls():
-            e.acceptProposedAction()
-
-    def dropEvent(self, e):
-        paths = [os.path.abspath(url.toLocalFile())
-                 for url in e.mimeData().urls()]
-        paths.sort(key=lambda p: os.path.basename(p))
-
-        for path in paths:
-            workerfree = not self.window.isWorkerBusy()
-            item = self.addVideo(path)
-            item.setSelected(workerfree)
-
     def addVideo(self, filepath):
         if not os.path.isfile(filepath):
             return None
@@ -448,6 +429,28 @@ class HEVideoList(QListWidget):
         self.window.worker_processing_queue_length += 1
         self.window.setWorkerBusyIcon()
         return item
+
+    # -------------------------------------------------------------------------
+    #  QListWidget overrides
+    # -------------------------------------------------------------------------
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        paths = [os.path.abspath(url.toLocalFile())
+                 for url in e.mimeData().urls()]
+        paths.sort(key=lambda p: os.path.basename(p))
+
+        for path in paths:
+            workerfree = not self.window.isWorkerBusy()
+            item = self.addVideo(path)
+            item.setSelected(workerfree)
 
     def sizeHint(self):
         return QSize(150, 100)
