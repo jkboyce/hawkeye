@@ -2400,10 +2400,10 @@ testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
-    #_filename = 'movies/juggling_test_5.mov'
+    # _filename = 'movies/juggling_test_5.mov'
     # _filename = 'movies/TBTB3_9balls.mov'
     _filename = 'movies/GOPR0553.MP4'
-    #_scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
     _scanvideo = 'movies/__Hawkeye__/GOPR0553_640x480.mp4'
 

@@ -421,7 +421,8 @@ class HEVideoList(QListWidget):
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        paths = [os.path.abspath(url.toLocalFile()) for url in e.mimeData().urls()]
+        paths = [os.path.abspath(url.toLocalFile())
+                 for url in e.mimeData().urls()]
         paths.sort(key=lambda p: os.path.basename(p))
 
         for path in paths:
