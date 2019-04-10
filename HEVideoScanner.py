@@ -1036,8 +1036,7 @@ class HEVideoScanner:
 
         arcs.sort(key=lambda x: x.f_peak)
         if self._verbosity >= 1:
-            print('EM done: {} arcs before, {} after\n'.format(arcs_before,
-                                                               len(arcs)))
+            print(f'EM done: {arcs_before} arcs before, {len(arcs)} after\n')
 
     def calculate_weights(self, arcs):
         """
