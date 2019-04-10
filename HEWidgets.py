@@ -261,6 +261,23 @@ class HEVideoView(QGraphicsView):
                         painter.drawLine(round(x1), round(y1),
                                          round(x2), round(y2))
 
+                # draw hand's carry from previous catch, if any
+                if prefs['carries'] and arc.prev is not None:
+                    xt, yt = arc.get_position(arc.f_throw, notes)
+                    dxt, dyt = mapToDisplayVideo(xt, yt)
+                    xt, yt = self.mapToView(dxt, dyt)
+                    xc, yc = arc.prev.get_position(arc.prev.f_catch, notes)
+                    dxc, dyc = mapToDisplayVideo(xc, yc)
+                    xc, yc = self.mapToView(dxc, dyc)
+
+                    painter.setPen(Qt.red)
+                    painter.setBrush(Qt.red)
+                    painter.setOpacity(1.0)
+                    painter.drawEllipse(QPoint(xt, yt), 2, 2)
+                    painter.drawEllipse(QPoint(xc, yc), 2, 2)
+                    painter.drawLine(round(xt), round(yt),
+                                     round(xc), round(yc))
+
             # draw throw number next to arc position
             if prefs['throw_labels']:
                 try:
@@ -404,15 +421,14 @@ class HEVideoList(QListWidget):
             e.acceptProposedAction()
 
     def dropEvent(self, e):
-        selectitem = None
-        workerfree = (self.window.worker_processing_queue_length == 0)
-        for url in e.mimeData().urls():
-            filepath = os.path.abspath(url.toLocalFile())
-            item = self.addVideo(filepath)
-            if workerfree and selectitem is None:
-                selectitem = item
-        if selectitem is not None:
-            selectitem.setSelected(True)
+        paths = [os.path.abspath(url.toLocalFile())
+                 for url in e.mimeData().urls()]
+        paths.sort(key=lambda p: os.path.basename(p))
+
+        for path in paths:
+            workerfree = not self.window.isWorkerBusy()
+            item = self.addVideo(path)
+            item.setSelected(workerfree)
 
     def addVideo(self, filepath):
         if not os.path.isfile(filepath):

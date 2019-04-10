@@ -54,6 +54,7 @@ class HEMainWindow(QMainWindow):
             'markers': True,
             'torso': False,
             'parabolas': True,
+            'carries': True,
             'throw_labels': True,
             'ideal_throws': False,
             'resolution': 'Actual size'
@@ -267,11 +268,12 @@ class HEMainWindow(QMainWindow):
         The preferences panel that is shown when the settings icon is clicked.
         """
         self.prefs_markers = QCheckBox('Ball detections')
-        self.prefs_torso = QCheckBox('Torso position')
-        self.prefs_parabolas = QCheckBox('Calculated ball arcs')
+        self.prefs_parabolas = QCheckBox('Ball arcs')
         self.prefs_throwlabels = QCheckBox('Throw number labels')
         self.prefs_ideal_throws = QCheckBox(
                     'Ideal throw points and angles')
+        self.prefs_carries = QCheckBox('Hand carry distances')
+        self.prefs_torso = QCheckBox('Torso position')
 
         resolution_layout = QHBoxLayout()
         resolution_layout.setAlignment(Qt.AlignLeft)
@@ -289,10 +291,11 @@ class HEMainWindow(QMainWindow):
         controls_layout.setAlignment(Qt.AlignVCenter)
         controls_layout.addWidget(QLabel('Video display options:'))
         controls_layout.addWidget(self.prefs_markers)
-        controls_layout.addWidget(self.prefs_torso)
         controls_layout.addWidget(self.prefs_parabolas)
         controls_layout.addWidget(self.prefs_throwlabels)
         # controls_layout.addWidget(self.prefs_ideal_throws)
+        controls_layout.addWidget(self.prefs_carries)
+        controls_layout.addWidget(self.prefs_torso)
         controls_layout.addLayout(resolution_layout)
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
@@ -1071,6 +1074,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_markers.setChecked(self.prefs['markers'])
         self.prefs_torso.setChecked(self.prefs['torso'])
         self.prefs_parabolas.setChecked(self.prefs['parabolas'])
+        self.prefs_carries.setChecked(self.prefs['carries'])
         self.prefs_throwlabels.setChecked(self.prefs['throw_labels'])
         self.prefs_ideal_throws.setChecked(self.prefs['ideal_throws'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
@@ -1085,6 +1089,7 @@ class HEMainWindow(QMainWindow):
         self.prefs['markers'] = self.prefs_markers.isChecked()
         self.prefs['torso'] = self.prefs_torso.isChecked()
         self.prefs['parabolas'] = self.prefs_parabolas.isChecked()
+        self.prefs['carries'] = self.prefs_carries.isChecked()
         self.prefs['throw_labels'] = self.prefs_throwlabels.isChecked()
         self.prefs['ideal_throws'] = self.prefs_ideal_throws.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
