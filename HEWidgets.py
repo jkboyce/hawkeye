@@ -449,8 +449,7 @@ class HEVideoList(QListWidget):
 
         for path in paths:
             workerfree = not self.window.isWorkerBusy()
-            item = self.addVideo(path)
-            item.setSelected(workerfree)
+            self.addVideo(path).setSelected(workerfree)
 
     def sizeHint(self):
         return QSize(150, 100)
