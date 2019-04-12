@@ -217,7 +217,7 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(clip_path)
-            except FileNotFoundError:
+            except OSError as err:
                 pass
             if not self.abort():
                 self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
@@ -333,6 +333,7 @@ class HEWorker(QObject):
                     output += line
                     if self.abort():
                         p.terminate()
+                        p.wait()
                         return 1
 
             results = f'FFprobe process ended, return code {p.returncode}\n'
@@ -465,7 +466,8 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(displayvid_path)
-            except FileNotFoundError:
+            except OSError as err:
+                # print("got exception: {}".format(err))
                 pass
             if not self.abort():
                 self.sig_output.emit(
@@ -519,7 +521,8 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(scanvid_path)
-            except FileNotFoundError:
+            except OSError as err:
+                # print("got exception: {}".format(err))
                 pass
             if not self.abort():
                 self.sig_output.emit(
@@ -590,6 +593,7 @@ class HEWorker(QObject):
                         self.sig_output.emit(file_id, line)
                     if self.abort():
                         p.terminate()
+                        p.wait()
                         return 1
 
             if file_id is not None:
