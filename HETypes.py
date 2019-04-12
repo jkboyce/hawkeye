@@ -109,7 +109,7 @@ class Ballarc:
         return min(t.frame for t in self.tags), max(t.frame for t in self.tags)
 
     def get_median_tag_radius(self):
-        return statistics.median([tag.radius for tag in self.tags])
+        return statistics.median(tag.radius for tag in self.tags)
 
     def closest_approach_frame(self, arc2, notes):
         """

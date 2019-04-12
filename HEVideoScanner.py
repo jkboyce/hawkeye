@@ -944,7 +944,7 @@ class HEVideoScanner:
 
         most_tagged_arcs = sorted(arcs, key=lambda a: len(a.tags),
                                   reverse=True)
-        g_px_per_frame_sq = 2 * median([a.e for a in most_tagged_arcs[:10]])
+        g_px_per_frame_sq = 2 * median(a.e for a in most_tagged_arcs[:10])
         notes['g_px_per_frame_sq'] = g_px_per_frame_sq
 
         if 'fps' in notes:
@@ -1520,8 +1520,12 @@ class HEVideoScanner:
                 arc.throw_id = throw_id
 
             run_dict = dict()
-            run_dict['throws'] = len(run)
             run_dict['throw'] = run
+            run_dict['throws'] = len(run)
+
+            if self._verbosity >= 2:
+                print(f'--- Analyzing run {run_id} ------------------------')
+                print(f'Number of arcs detected = {run_dict["throws"]}')
 
             f_firstthrow = min(arc.f_throw for arc in run)
             f_lastthrow = max(arc.f_throw for arc in run)
@@ -1536,10 +1540,6 @@ class HEVideoScanner:
             else:
                 # likely just a single throw in the run
                 run_dict['throws per sec'] = None
-
-            if self._verbosity >= 2:
-                print(f'--- Analyzing run {run_id} ------------------------')
-                print(f'Number of arcs detected = {run_dict["throws"]}')
 
             self.assign_hands(run_dict)
             self.connect_arcs(run_dict)
@@ -1583,15 +1583,15 @@ class HEVideoScanner:
 
                 if len(nearby_tags) > 0:
                     x_sorted_tags = sorted(nearby_tags, key=lambda t: t.x)
-                    x_min = median([t.x for t in x_sorted_tags[:5]])
-                    x_max = median([t.x for t in x_sorted_tags[-5:]])
+                    x_min = median(t.x for t in x_sorted_tags[:5])
+                    x_max = median(t.x for t in x_sorted_tags[-5:])
 
                     if last_torso is not None:
                         _, y, w, h, _ = last_torso
                         x = 0.5 * (x_min + x_max - w)
                     else:
                         y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
-                        y_max = median([t.y for t in y_sorted_tags[-5:]])
+                        y_max = median(t.y for t in y_sorted_tags[-5:])
 
                         w = 0.7 * (x_max - x_min)   # make educated guesses
                         h = 0.8 * w
