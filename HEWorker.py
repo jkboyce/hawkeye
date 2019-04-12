@@ -499,34 +499,36 @@ class HEWorker(QObject):
         file_path = fileinfo['file_path']
         scanvid_path = fileinfo['scanvid_path']
 
-        if not os.path.isfile(scanvid_path):
-            args = ['-hide_banner',
-                    '-i', file_path,
-                    '-c:v', 'libx264',          # encode with libx264 (H.264)
-                    '-crf', '20',               # quality factor (high)
-                    '-vf',                      # video filters:
-                    'scale=trunc(ih*dar):ih,'   # scale to square pixels
-                    'scale=-1:480,'             # scale to height 480
-                    'crop=min(iw\\,640):480,'   # crop to width 640, if needed
-                    'pad=640:480:(ow-iw)/2:0,'  # pad to width 640, if needed
-                    'setsar=1',                 # set SAR=1:1 (square pixels)
-                    '-an',                      # no audio
-                    scanvid_path]
-            retcode = self.run_ffmpeg(args, file_id)
+        if os.path.isfile(scanvid_path):
+            return 0                        # video already exists
 
-            if retcode != 0 or self.abort():
-                try:
-                    os.remove(scanvid_path)
-                except FileNotFoundError:
-                    pass
-                if not self.abort():
-                    self.sig_output.emit(
-                            file_id, '\nError converting video {}'.format(
-                                         fileinfo['file_basename']))
-                    self.sig_error.emit(
-                            file_id, 'Error converting video {}'.format(
-                                         fileinfo['file_basename']))
-                return 1
+        args = ['-hide_banner',
+                '-i', file_path,
+                '-c:v', 'libx264',          # encode with libx264 (H.264)
+                '-crf', '20',               # quality factor (high)
+                '-vf',                      # video filters:
+                'scale=trunc(ih*dar):ih,'   # scale to square pixels
+                'scale=-1:480,'             # scale to height 480
+                'crop=min(iw\\,640):480,'   # crop to width 640, if needed
+                'pad=640:480:(ow-iw)/2:0,'  # pad to width 640, if needed
+                'setsar=1',                 # set SAR=1:1 (square pixels)
+                '-an',                      # no audio
+                scanvid_path]
+        retcode = self.run_ffmpeg(args, file_id)
+
+        if retcode != 0 or self.abort():
+            try:
+                os.remove(scanvid_path)
+            except FileNotFoundError:
+                pass
+            if not self.abort():
+                self.sig_output.emit(
+                        file_id, '\nError converting video {}'.format(
+                                     fileinfo['file_basename']))
+                self.sig_error.emit(
+                        file_id, 'Error converting video {}'.format(
+                                     fileinfo['file_basename']))
+            return 1
 
         return 0
 
