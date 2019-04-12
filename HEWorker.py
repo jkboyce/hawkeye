@@ -186,11 +186,11 @@ class HEWorker(QObject):
             self.sig_clipping_done.emit()   # clip already exists
             return
 
-        # start clip 4 secs before first throw, end 4 secs after last catch
+        # start clip 3 secs before first throw, end 3 secs after last catch
         fps = notes['fps']
         startframe, endframe = run_dict['frame range']
-        starttime = max(0.0, startframe / fps - 4.0)
-        endtime = min((notes['frame_count'] - 4) / fps, endframe / fps + 4.0)
+        starttime = max(0.0, startframe / fps - 3.0)
+        endtime = min((notes['frame_count'] - 4) / fps, endframe / fps + 3.0)
         duration = endtime - starttime
 
         sm, ss = divmod(starttime, 60)
