@@ -883,6 +883,12 @@ class HEMainWindow(QMainWindow):
             if self.currentVideoItem.vc.doneprocessing:
                 self.progressBar.hide()
             else:
+                # print("calling ensureCursorVisible()")
+                self.outputWidget.moveCursor(QTextCursor.End)
+                self.outputWidget.ensureCursorVisible()
+                # vsb = self.outputWidget.verticalScrollBar()
+                # if vsb is not None:
+                #    vsb.setValue(vsb.maximum())
                 self.progressBar.setValue(
                         self.currentVideoItem.vc.processing_step)
                 self.progressBar.setMaximum(
