@@ -415,9 +415,8 @@ class HEVideoList(QListWidget):
         if not os.path.isfile(filepath):
             return None
 
-        basename = os.path.basename(filepath)
-        item = QListWidgetItem(basename)
-        item.foreground = item.foreground()   # retain so we can restore later
+        item = QListWidgetItem(os.path.basename(filepath))
+        item.foreground = item.foreground()   # save so we can restore later
         item.setForeground(Qt.gray)
         item.setFlags(item.flags() | Qt.ItemIsSelectable)
 
@@ -425,6 +424,7 @@ class HEVideoList(QListWidget):
 
         self.addItem(item)
 
+        # tell worker to process the video
         self.window.sig_process_video.emit(filepath)
         self.window.worker_processing_queue_length += 1
         self.window.setWorkerBusyIcon()
