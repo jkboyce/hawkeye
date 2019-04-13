@@ -34,79 +34,81 @@ class HEVideoView(QGraphicsView):
 
         Adjust UI elements as needed during playback, and perform aspects of
         playback control that we want to be frame-accurate.
+
+        There are two modes of video playback: Regular playback of the media
+        (at the rate specified in the pulldown control), and "fast stepping"
+        mode. Fast stepping is done by pausing regular playback and manually
+        advancing forward or backward through successive frames with
+        setFramenum(). This allows allows us to cue forward or backward to a
+        precise frame number.
         """
         win = self.window
-        videoitem = win.currentVideoItem
-        player = videoitem.vc.player
-        frames_total = videoitem.vc.frames
+        vc = self.window.currentVideoItem.vc
 
         # record position in movie
-        videoitem.vc.position = player.position()
+        vc.position = vc.player.position()
 
-        # update position of slider. This is supposed to happen in
-        # HEVideoContext.positionChanged(), but on certain platforms
-        # QMediaPlayer doesn't signal positionChanged() so do it here also.
+        # update position of slider, and block signals so we don't trigger
+        # a call to HEMainWindow.setPosition()
         prev = win.positionSlider.blockSignals(True)
-        win.positionSlider.setValue(videoitem.vc.position)
+        win.positionSlider.setValue(vc.position)
         win.positionSlider.blockSignals(prev)
 
         # check if we're at the beginning or end of the video and adjust
         # UI elements as appropriate
         if framenum == 0:
             win.backButton.setEnabled(False)
-        elif (framenum >= frames_total - 1):
+        elif (framenum >= vc.frames - 1):
             win.pauseMovie()
-            if framenum != frames_total - 1:
-                win.setFramenum(frames_total - 1)
-            framenum = frames_total - 1
-            win.backButton.setEnabled(videoitem.vc.has_played)
+            if framenum != vc.frames - 1:
+                win.setFramenum(vc.frames - 1)
+            framenum = vc.frames - 1
+            win.backButton.setEnabled(vc.has_played)
             win.forwardButton.setEnabled(False)
             win.playButton.setEnabled(False)
         else:
-            can_step = (player.state() != QMediaPlayer.PlayingState
-                        and videoitem.vc.has_played)
+            can_step = (vc.player.state() != QMediaPlayer.PlayingState
+                        and vc.has_played)
             win.backButton.setEnabled(can_step)
             win.forwardButton.setEnabled(can_step)
             win.playButton.setEnabled(True)
 
         # keep selected run in viewlist synchronized with position in video
-        vl = win.viewList
-        for i in range(vl.count()):
-            viewitem = vl.item(i)
+        for i in range(win.viewList.count()):
+            viewitem = win.viewList.item(i)
             if (viewitem._type == 'run' and
                     (viewitem._startframe <= framenum < viewitem._endframe or
                      (viewitem._runindex == 0 and
                       framenum < viewitem._startframe))):
                 if not viewitem.isSelected():
-                    prev = vl.blockSignals(True)
-                    vl.setCurrentRow(i)
+                    prev = win.viewList.blockSignals(True)
+                    win.viewList.setCurrentRow(i)
+                    win.viewList.blockSignals(prev)
                     win.currentViewItem = viewitem
-                    vl.blockSignals(prev)
                     break
 
         # if we're in fast-stepping mode, ensure we respect the frame limits
         # and also check if we've hit the end of the range we're stepping
         # through.
-        if self.window.stepForwardUntil is not None:
-            if self.window.stepForwardUntil >= frames_total:
-                self.window.stepForwardUntil = frames_total - 1
-            if framenum >= self.window.stepForwardUntil:
-                if framenum > self.window.stepForwardUntil:
-                    self.window.setFramenum(self.window.stepForwardUntil)
-                self.window.stepForwardUntil = None
-        if self.window.stepBackwardUntil is not None:
-            if self.window.stepBackwardUntil < 0:
-                self.window.stepBackwardUntil = 0
-            if framenum <= self.window.stepBackwardUntil:
-                if framenum < self.window.stepBackwardUntil:
-                    self.window.setFramenum(self.window.stepBackwardUntil)
-                self.window.stepBackwardUntil = None
+        if win.stepForwardUntil is not None:
+            win.stepForwardUntil = min(win.stepForwardUntil, vc.frames - 1)
+            if framenum >= win.stepForwardUntil:
+                if framenum > win.stepForwardUntil:
+                    # shouldn't happen, but just in case
+                    win.setFramenum(win.stepForwardUntil)
+                win.stepForwardUntil = None
+        if win.stepBackwardUntil is not None:
+            win.stepBackwardUntil = max(win.stepBackwardUntil, 0)
+            if framenum <= win.stepBackwardUntil:
+                if framenum < win.stepBackwardUntil:
+                    win.setFramenum(win.stepBackwardUntil)
+                win.stepBackwardUntil = None
 
         # if we're in fast-stepping mode, advance a frame
-        if self.window.stepForwardUntil is not None:
-            self.window.stepForward()
-        elif self.window.stepBackwardUntil is not None:
-            self.window.stepBackward()
+        if win.stepForwardUntil is not None:
+            win.stepForward()
+        elif win.stepBackwardUntil is not None:
+            win.stepBackward()
 
     def draw_overlays(self, painter, framenum):
         """
@@ -114,10 +116,10 @@ class HEVideoView(QGraphicsView):
 
         Draw any overlays on the video frame, for the current frame number.
         """
+        if not self.window.currentVideoItem.vc.overlays:
+            return
         notes = self.window.currentVideoItem.vc.notes
         if notes is None or notes['step'] < 5:
-            return
-        if not self.window.currentVideoItem.vc.overlays:
             return
 
         # the following is a hack to solve the way QMediaPlayer on Windows
@@ -145,7 +147,7 @@ class HEVideoView(QGraphicsView):
                              bodyLR_x - bodyUL_x, bodyLR_y - bodyUL_y)
 
         # draw object detections
-        if self.window.prefs['markers'] and notes_framenum in notes['meas']:
+        if prefs['markers'] and notes_framenum in notes['meas']:
             for tag in notes['meas'][notes_framenum]:
                 color = Qt.green if tag.arc is not None else Qt.red
                 painter.setPen(color)
@@ -302,15 +304,13 @@ class HEVideoView(QGraphicsView):
 
         Draw the frame number in lower left corner of the viewport.
         """
-        videoitem = self.window.currentVideoItem
+        vc = self.window.currentVideoItem.vc
 
-        frames_total = videoitem.vc.frames
         digits = 1 if framenum <= 1 else 1 + floor(log10(framenum))
-        digits_max = (1 if frames_total <= 1
-                      else 1 + floor(log10(frames_total - 1)))
-        graphicsvideoitem = videoitem.vc.graphicsvideoitem
+        digits_max = 1 if vc.frames <= 1 else 1 + floor(log10(vc.frames - 1))
+
         movie_lower_left_x, movie_lower_left_y = self.mapToView(
-                0.0, graphicsvideoitem.size().height())
+                0.0, vc.graphicsvideoitem.size().height())
         lower_left_x = max(0, movie_lower_left_x)
         lower_left_y = min(viewport.size().height(), movie_lower_left_y)
 
@@ -329,9 +329,10 @@ class HEVideoView(QGraphicsView):
         """
         Map from video coordinates (pixels) to view coordinates
         """
+        vc = self.window.currentVideoItem.vc
+
         movie_coord = QPointF(x, y)
-        graphicsvideoitem = self.window.currentVideoItem.vc.graphicsvideoitem
-        scene_coord = graphicsvideoitem.mapToScene(movie_coord)
+        scene_coord = vc.graphicsvideoitem.mapToScene(movie_coord)
         view_coord = self.mapFromScene(scene_coord)
         return view_coord.x(), view_coord.y()
 
@@ -346,13 +347,10 @@ class HEVideoView(QGraphicsView):
         """
         super().paintEvent(e)       # draw frame of video
 
-        if self.window is None:
-            return
-        videoitem = self.window.currentVideoItem
-        if videoitem is None:
+        if self.window is None or self.window.currentVideoItem is None:
             return
 
-        moviestatus = videoitem.vc.player.mediaStatus()
+        moviestatus = self.window.currentVideoItem.vc.player.mediaStatus()
         if (moviestatus != QMediaPlayer.BufferedMedia and
                 moviestatus != QMediaPlayer.BufferingMedia and
                 moviestatus != QMediaPlayer.EndOfMedia):
@@ -424,7 +422,7 @@ class HEVideoList(QListWidget):
 
         self.addItem(item)
 
-        # tell worker to process the video
+        # signal worker to process the video
         self.window.sig_process_video.emit(filepath)
         self.window.worker_processing_queue_length += 1
         self.window.setWorkerBusyIcon()
@@ -472,7 +470,6 @@ class HEVideoContext(QObject):
         self.player = QMediaPlayer(parent=main_window,
                                    flags=QMediaPlayer.VideoSurface)
         self.player.stateChanged.connect(self.mediaStateChanged)
-        self.player.positionChanged.connect(self.positionChanged)
         self.player.error.connect(self.handlePlayerError)
 
         self.graphicsvideoitem = QGraphicsVideoItem()
@@ -510,20 +507,6 @@ class HEVideoContext(QObject):
             else:
                 self.window.playButton.setIcon(
                         self.window.style().standardIcon(QStyle.SP_MediaPlay))
-
-    @Slot(int)
-    def positionChanged(self, position):
-        """
-        Signaled by the QMediaPlayer when position in the movie changes.
-
-        We block signals since this is only called by the media player when
-        position changes, not when the user interacts with the slider. We want
-        to update the slider position without causing setPosition() to trigger.
-        """
-        if self.isActive():
-            prev = self.window.positionSlider.blockSignals(True)
-            self.window.positionSlider.setValue(position)
-            self.window.positionSlider.blockSignals(prev)
 
     @Slot()
     def handlePlayerError(self):

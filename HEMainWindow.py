@@ -45,18 +45,21 @@ class HEMainWindow(QMainWindow):
         self.app = app
         self.setWindowTitle('Hawkeye')
 
+        # currently-selected video and view in UI
         self.currentVideoItem = None
         self.currentViewItem = None
+
+        # fast-stepping playback mode; see HEVideoView.do_playback_control()
         self.stepForwardUntil = None
         self.stepBackwardUntil = None
 
         self.prefs = {
             'markers': True,
-            'torso': False,
             'parabolas': True,
-            'carries': True,
             'throw_labels': True,
             'ideal_throws': False,
+            'carries': True,
+            'torso': False,
             'resolution': 'Actual size'
         }
 
@@ -1241,7 +1244,7 @@ class HEMainWindow(QMainWindow):
         Called when user interacts with the position slider.
 
         This is NOT called when the position slider changes as a result of
-        playing the movie. See positionChanged().
+        playing the movie. See HEVideoView.do_playback_control().
         """
         vc = self.currentVideoItem.vc
         if vc.notes is not None:
@@ -1273,7 +1276,7 @@ class HEMainWindow(QMainWindow):
                 close_event.ignore()        # prevents window from closing
 
         if wants_to_quit:
-            self._thread.requestInterruption()
+            self._thread.requestInterruption()  # see HEWorker.abort()
             self._thread.quit()             # stop worker thread's event loop
             self._thread.wait(5000)         # wait up to five seconds to stop
             self.app.quit()
