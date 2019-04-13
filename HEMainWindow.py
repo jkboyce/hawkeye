@@ -1444,39 +1444,36 @@ class HEMainWindow(QMainWindow):
             if 'arcs' not in notes or 'run' not in notes:
                 return
             if viewitem is not None and viewitem._type == 'run':
-                runindex = viewitem._runindex
-                throwarcs = notes['run'][runindex]['throw']
+                throwarcs = notes['run'][viewitem._runindex]['throw']
             else:
                 throwarcs = notes['arcs']
 
-            throwframes = sorted([arc.f_throw for arc in throwarcs
-                                 if arc.f_throw > framenum + 1])
-            if len(throwframes) == 0:
+            nextthrow = min((arc.f_throw for arc in throwarcs
+                             if arc.f_throw > framenum + 1), default=None)
+            if nextthrow is None:
                 return
-            self.stepForwardUntil = max(round(throwframes[0]), framenum + 1)
+            self.stepForwardUntil = max(round(nextthrow), framenum + 1)
             self.stepBackwardUntil = None
             self.stepForward()          # see note above on step forward
         elif key == Qt.Key_Z and notes is not None:
             # play backward until previous throw in run
             if 'arcs' not in notes or 'run' not in notes:
                 return
-            if (self.currentViewItem is not None and
-                    self.currentViewItem._type == 'run'):
-                runindex = self.currentViewItem._runindex
-                throwarcs = notes['run'][runindex]['throw']
+            if viewitem is not None and viewitem._type == 'run':
+                throwarcs = notes['run'][viewitem._runindex]['throw']
             else:
                 throwarcs = notes['arcs']
 
-            throwframes = sorted([arc.f_throw for arc in throwarcs
-                                 if arc.f_throw < framenum - 1], reverse=True)
-            if len(throwframes) == 0:
+            prevthrow = max((arc.f_throw for arc in throwarcs
+                             if arc.f_throw < framenum - 1), default=None)
+            if prevthrow is None:
                 return
             self.stepForwardUntil = None
-            self.stepBackwardUntil = min(round(throwframes[0]), framenum - 1)
+            self.stepBackwardUntil = min(round(prevthrow), framenum - 1)
             self.stepBackward()         # see note above on step forward
         elif key == Qt.Key_S and notes is not None:
             # go to next run
-            if (viewitem is not None and viewitem._type == 'run'):
+            if viewitem is not None and viewitem._type == 'run':
                 row = self.viewList.row(viewitem)
                 nextitem = self.viewList.item(row + 1)
                 if nextitem is not None and nextitem._type == 'run':
@@ -1490,7 +1487,7 @@ class HEMainWindow(QMainWindow):
         elif key == Qt.Key_A and notes is not None:
             # go to previous run, or start of current run if we're more than
             # one second into playback
-            if (viewitem is not None and viewitem._type == 'run'):
+            if viewitem is not None and viewitem._type == 'run':
                 if framenum > (viewitem._startframe + notes['fps']):
                     self.setFramenum(viewitem._startframe)
                     self.stepForwardUntil = None
