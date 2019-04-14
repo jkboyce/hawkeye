@@ -1954,8 +1954,9 @@ class HEVideoScanner:
         for arc in run:
             # try to find the last arc caught by the hand `arc` throws with
             arc.prev = max((arc_prev for arc_prev in run
-                            if (arc_prev.f_catch < arc.f_throw and
-                                arc_prev.hand_catch == arc.hand_throw)),
+                            if (arc_prev.f_catch < arc.f_throw
+                                and arc_prev.hand_catch == arc.hand_throw
+                                and arc_prev.next is None)),
                            key=lambda a: a.f_catch, default=None)
             if arc.prev is not None:
                 arc.prev.next = arc
