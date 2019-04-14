@@ -149,18 +149,26 @@ class HEVideoView(QGraphicsView):
         # draw object detections
         if prefs['markers'] and notes_framenum in notes['meas']:
             for tag in notes['meas'][notes_framenum]:
-                color = Qt.green if tag.arc is not None else Qt.red
-                painter.setPen(color)
-                painter.setBrush(Qt.NoBrush)
-                painter.setOpacity(1.0)
+                if tag.arc is None:
+                    color = Qt.red
+                else:
+                    color = (Qt.yellow if tag.arc.hand_throw == 'right'
+                             else Qt.green)
                 dcenter_x, dcenter_y = mapToDisplayVideo(tag.x, tag.y)
                 center_x, center_y = self.mapToView(dcenter_x, dcenter_y)
+                """
                 dright_x, dright_y = mapToDisplayVideo(tag.x + tag.radius,
                                                        tag.y)
                 right_x, _ = self.mapToView(dright_x, dright_y)
                 radius = right_x - center_x
-                painter.drawEllipse(QPoint(center_x, center_y),
-                                    radius, radius)
+                painter.setBrush(Qt.NoBrush)
+                """
+                radius = 3.0
+                painter.setBrush(color)
+
+                painter.setPen(color)
+                painter.setOpacity(1.0)
+                painter.drawEllipse(QPoint(center_x, center_y), radius, radius)
 
         points_per_parabola = 20
 
@@ -184,7 +192,9 @@ class HEVideoView(QGraphicsView):
                         path.moveTo(arc_x, arc_y)
                     else:
                         path.lineTo(arc_x, arc_y)
-                color = Qt.red if framenum == start else Qt.green
+                color = Qt.yellow if arc.hand_throw == 'right' else Qt.green
+                if framenum == start:
+                    color = Qt.red
                 painter.setPen(color)
                 painter.setBrush(Qt.NoBrush)
                 painter.setOpacity((end - framenum) / (end - start))
