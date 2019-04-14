@@ -42,7 +42,7 @@ class Ballarc:
         # assigned in processing step 5:
         self.next = None
         self.prev = None
-        self.hand_throw = None
+        self.hand_throw = None  # string, 'right' or 'left'
         self.f_throw = None     # frame number
         self.x_throw = None     # juggler coordinates, pixel units
         self.hand_catch = None
