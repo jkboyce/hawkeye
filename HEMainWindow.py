@@ -850,12 +850,13 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
-        headeritem = QListWidgetItem('')
-        headeritem._type = 'output'
-        headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
-        header = QLabel('Scanner output')
-        self.viewList.addItem(headeritem)
-        self.viewList.setItemWidget(headeritem, header)
+        if not (videoitem.vc.doneprocessing and len(videoitem.vc.output) == 0):
+            headeritem = QListWidgetItem('')
+            headeritem._type = 'output'
+            headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
+            header = QLabel('Scanner output')
+            self.viewList.addItem(headeritem)
+            self.viewList.setItemWidget(headeritem, header)
 
         if not videoitem.vc.doneprocessing:
             headeritem = QListWidgetItem('')
