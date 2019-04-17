@@ -156,14 +156,22 @@ class HEVideoView(QGraphicsView):
                              else Qt.green)
                 dcenter_x, dcenter_y = mapToDisplayVideo(tag.x, tag.y)
                 center_x, center_y = self.mapToView(dcenter_x, dcenter_y)
+
                 """
-                dright_x, dright_y = mapToDisplayVideo(tag.x + tag.radius,
-                                                       tag.y)
+                # style = circles surrounding balls:
+                dright_x, dright_y = mapToDisplayVideo(
+                        tag.x + tag.radius, tag.y)
                 right_x, _ = self.mapToView(dright_x, dright_y)
                 radius = right_x - center_x
                 painter.setBrush(Qt.NoBrush)
                 """
-                radius = 3.0
+
+                # style = filled circles inside balls: 
+                marker_radius_px = 1.5 / notes['cm_per_pixel']
+                dright_x, dright_y = mapToDisplayVideo(
+                        tag.x + marker_radius_px, tag.y)
+                right_x, _ = self.mapToView(dright_x, dright_y)
+                radius = max(right_x - center_x, 2.0)
                 painter.setBrush(color)
 
                 painter.setPen(color)
