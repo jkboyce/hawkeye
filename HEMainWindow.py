@@ -493,7 +493,12 @@ class HEMainWindow(QMainWindow):
         worker.sig_notes_done.connect(self.on_worker_notes_done)
         worker.sig_clipping_done.connect(self.on_worker_clipping_done)
 
-        thread.start(QThread.LowPriority)   # starts thread's event loop
+        # have worker thread clean up worker object on close; otherwise we
+        # can get a "QObject::~QObject: Timers cannot be stopped from another
+        # thread" console error
+        thread.finished.connect(worker.deleteLater)
+
+        thread.start(QThread.LowPriority)   # start thread's event loop
 
         self.sig_new_prefs.emit(self.prefs)
         self.worker_processing_queue_length = 0

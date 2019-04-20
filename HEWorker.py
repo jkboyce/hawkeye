@@ -93,6 +93,9 @@ class HEWorker(QObject):
         """
         Signaled when the worker should process a video.
         """
+        if self.abort():
+            return
+
         fileinfo = self.make_product_fileinfo(file_id)
 
         # check if the file exists and is readable
@@ -169,6 +172,9 @@ class HEWorker(QObject):
         Clip the given run number from the video and save it in the same
         directory as the source video.
         """
+        if self.abort():
+            return
+
         run_dict = notes['run'][run_num]
         balls = run_dict['balls']
         throws = run_dict['throws']
