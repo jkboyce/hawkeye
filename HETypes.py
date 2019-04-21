@@ -48,14 +48,13 @@ class Ballarc:
         self.hand_catch = None
         self.f_catch = None
         self.x_catch = None
-        self.height = None      # needed?
-        self.x_origin = None    # needed?
-        self.y_origin = None    # needed?
+        self.height = None      # arc height above throw point, pixel units
         self.run_id = None      # run number in video (starting at 1)
         self.throw_id = None    # throw number in run (starting at 1)
-        self.error = None       # tuple of error values
-        self.ideal = None       # 'ideal' (zero-error) version of arc
-        self.close_arcs = None  # list of tuples describing closest other arcs
+        self.throw_error_s = None   # amount that throw timing is early (sec)
+        self.throw_error_cm = None  # above, translated to cm (using velocity)
+        self.catch_error_s = None   # amount that catch timing is early (sec)
+        self.catch_error_cm = None  # above, translated to cm
 
     def get_position(self, frame, notes):
         """

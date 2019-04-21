@@ -57,7 +57,7 @@ class HEMainWindow(QMainWindow):
             'markers': True,
             'parabolas': True,
             'throw_labels': True,
-            'ideal_throws': False,
+            'ideal_points': True,
             'carries': True,
             'torso': False,
             'resolution': 'Actual size'
@@ -273,8 +273,8 @@ class HEMainWindow(QMainWindow):
         self.prefs_markers = QCheckBox('Ball detections')
         self.prefs_parabolas = QCheckBox('Ball arcs')
         self.prefs_throwlabels = QCheckBox('Throw number labels')
-        self.prefs_ideal_throws = QCheckBox(
-                    'Ideal throw points and angles')
+        self.prefs_ideal_points = QCheckBox(
+                    'Ideal throw and catch points')
         self.prefs_carries = QCheckBox('Hand carry distances')
         self.prefs_torso = QCheckBox('Torso position')
 
@@ -296,7 +296,7 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.prefs_markers)
         controls_layout.addWidget(self.prefs_parabolas)
         controls_layout.addWidget(self.prefs_throwlabels)
-        # controls_layout.addWidget(self.prefs_ideal_throws)
+        controls_layout.addWidget(self.prefs_ideal_points)
         controls_layout.addWidget(self.prefs_carries)
         controls_layout.addWidget(self.prefs_torso)
         controls_layout.addLayout(resolution_layout)
@@ -1091,7 +1091,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_parabolas.setChecked(self.prefs['parabolas'])
         self.prefs_carries.setChecked(self.prefs['carries'])
         self.prefs_throwlabels.setChecked(self.prefs['throw_labels'])
-        self.prefs_ideal_throws.setChecked(self.prefs['ideal_throws'])
+        self.prefs_ideal_points.setChecked(self.prefs['ideal_points'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
         self.player_stackedWidget.setCurrentIndex(1)
 
@@ -1106,7 +1106,7 @@ class HEMainWindow(QMainWindow):
         self.prefs['parabolas'] = self.prefs_parabolas.isChecked()
         self.prefs['carries'] = self.prefs_carries.isChecked()
         self.prefs['throw_labels'] = self.prefs_throwlabels.isChecked()
-        self.prefs['ideal_throws'] = self.prefs_ideal_throws.isChecked()
+        self.prefs['ideal_points'] = self.prefs_ideal_points.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
         self.sig_new_prefs.emit(self.prefs)
         self.player_stackedWidget.setCurrentIndex(0)

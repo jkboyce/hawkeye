@@ -166,7 +166,7 @@ class HEVideoView(QGraphicsView):
                 painter.setBrush(Qt.NoBrush)
                 """
 
-                # style = filled circles inside balls: 
+                # style = filled circles inside balls:
                 marker_radius_px = 1.5 / notes['cm_per_pixel']
                 dright_x, dright_y = mapToDisplayVideo(
                         tag.x + marker_radius_px, tag.y)
@@ -227,34 +227,7 @@ class HEVideoView(QGraphicsView):
                 # special things to draw when we're at the exact starting
                 # frame of a throw
 
-                # draw ideal throw arc
-                if prefs['ideal_throws'] and arc.ideal is not None:
-                    ideal = arc.ideal
-                    path = QPainterPath()
-                    for i in range(points_per_parabola):
-                        f_point = ideal.f_throw + i * (
-                                (ideal.f_catch - ideal.f_throw) /
-                                (points_per_parabola - 1))
-                        x, y = ideal.get_position(f_point, notes)
-                        dx, dy = mapToDisplayVideo(x, y)
-                        ideal_x, ideal_y = self.mapToView(dx, dy)
-                        if i == 0:
-                            path.moveTo(ideal_x, ideal_y)
-                        else:
-                            path.lineTo(ideal_x, ideal_y)
-                    painter.setPen(Qt.white)
-                    painter.setBrush(Qt.NoBrush)
-                    painter.setOpacity(1.0)
-                    painter.drawPath(path)
-
-                    x, y = ideal.get_position(ideal.f_throw, notes)
-                    dx, dy = mapToDisplayVideo(x, y)
-                    ideal_x, ideal_y = self.mapToView(dx, dy)
-                    painter.setPen(Qt.white)
-                    painter.setBrush(Qt.white)
-                    painter.setOpacity(1.0)
-                    painter.drawEllipse(QPoint(ideal_x, ideal_y), 2, 2)
-
+                """
                 # draw vectors of closest approach with other arcs
                 if prefs['parabolas'] and arc.close_arcs is not None:
                     for arc2_throw_id, frame, _ in arc.close_arcs[:5]:
@@ -280,6 +253,7 @@ class HEVideoView(QGraphicsView):
                         painter.drawEllipse(QPoint(x2, y2), 2, 2)
                         painter.drawLine(round(x1), round(y1),
                                          round(x2), round(y2))
+                """
 
                 # draw hand's carry from previous catch, if any
                 if prefs['carries'] and arc.prev is not None:
@@ -297,6 +271,49 @@ class HEVideoView(QGraphicsView):
                     painter.drawEllipse(QPoint(xc, yc), 2, 2)
                     painter.drawLine(round(xt), round(yt),
                                      round(xc), round(yc))
+
+                # draw ideal throw and catch points
+                if prefs['ideal_points']:
+                    # find centerline
+                    x, y, w, h, _ = notes['body'][notes_framenum]
+                    center_x_px = x + 0.5 * w      # pixel units
+                    center_y_px = y + h
+
+                    run_dict = notes['run'][arc.run_id - 1]
+                    throw_offset_px = (run_dict['target throw point cm']
+                                       / notes['cm_per_pixel'])
+                    catch_offset_px = (run_dict['target catch point cm']
+                                       / notes['cm_per_pixel'])
+                    len_px = 5.0 / notes['cm_per_pixel']
+
+                    tx_px = (center_x_px - throw_offset_px
+                             if arc.hand_throw == 'right'
+                             else center_x_px + throw_offset_px)
+                    cx_px = (center_x_px - catch_offset_px
+                             if arc.hand_catch == 'right'
+                             else center_x_px + catch_offset_px)
+
+                    tbx_dv, tby_dv = mapToDisplayVideo(
+                            tx_px, center_y_px + len_px)
+                    ttx_dv, tty_dv = mapToDisplayVideo(
+                            tx_px, center_y_px - len_px)
+                    tbx, tby = self.mapToView(tbx_dv, tby_dv)
+                    ttx, tty = self.mapToView(ttx_dv, tty_dv)
+
+                    cbx_dv, cby_dv = mapToDisplayVideo(
+                            cx_px, center_y_px + len_px)
+                    ctx_dv, cty_dv = mapToDisplayVideo(
+                            cx_px, center_y_px - len_px)
+                    cbx, cby = self.mapToView(cbx_dv, cby_dv)
+                    ctx, cty = self.mapToView(ctx_dv, cty_dv)
+
+                    painter.setPen(QPen(Qt.red, 2))
+                    painter.setBrush(Qt.red)
+                    painter.setOpacity(1.0)
+                    painter.drawLine(round(tbx), round(tby),
+                                     round(ttx), round(tty))
+                    painter.drawLine(round(cbx), round(cby),
+                                     round(ctx), round(cty))
 
             # draw throw number next to arc position
             if prefs['throw_labels']:

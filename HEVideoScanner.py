@@ -97,6 +97,14 @@ class HEVideoScanner:
         of ints)
     run_dict['duration']:
         duration in seconds of run (float)
+    run_dict['height']:
+        height of the pattern, in centimeters (float)
+    run_dict['width']:
+        width of the pattern, in centimeters (float)
+    run_dict['target throw point cm']:
+        ideal throw location from centerline (float)
+    run_dict['target catch point cm']:
+        ideal catch location from centerline (float)
     """
 
     CURRENT_NOTES_VERSION = 1
@@ -1532,6 +1540,11 @@ class HEVideoScanner:
             f_lastcatch = max(arc.f_catch for arc in run)
             run_dict['frame range'] = (f_firstthrow, f_lastcatch)
             run_dict['duration'] = (f_lastcatch - f_firstthrow) / notes['fps']
+            if len(run) > 2:
+                run_dict['height'] = notes['cm_per_pixel'] * mean(
+                        arc.height for arc in run[2:])
+            else:
+                run_dict['height'] = None
 
             if f_lastthrow != f_firstthrow:
                 run_dict['throws per sec'] = (
@@ -1544,7 +1557,7 @@ class HEVideoScanner:
             self.assign_hands(run_dict)
             self.connect_arcs(run_dict)
             self.estimate_ball_count(run_dict)
-            # self.analyze_throw_errors(run_dict)
+            self.analyze_run_form(run_dict)
 
             notes['run'].append(run_dict)
 
@@ -1639,8 +1652,6 @@ class HEVideoScanner:
             arc.x_throw = (arc.a - arc.b * df) - x_b
             arc.x_catch = (arc.a + arc.b * df) - x_b
             arc.height = y_b - arc.c
-            arc.x_origin = x_b
-            arc.y_origin = y_b
 
     def find_runs(self):
         """
@@ -1968,11 +1979,10 @@ class HEVideoScanner:
         there is usually at least one in the hands that won't be seen by
         the tracker.
         """
-        notes = self.notes
         run = run_dict['throw']
         duration = run_dict['duration']
         tps = run_dict['throws per sec']
-        height = notes['cm_per_pixel'] * mean(arc.height for arc in run)
+        height = run_dict['height']
 
         if tps is None:
             # should never happen
@@ -2010,139 +2020,117 @@ class HEVideoScanner:
             print(f'N_est = {N_est:.2f}, N_round = {N_round}, '
                   f'N_max = {N_max} --> N = {N}')
 
-    def analyze_throw_errors(self, run_dict):
+    def analyze_run_form(self, run_dict):
         """
-        For each arc, calculate and store as attributes the following:
-        (1) location error in throw and peak (x,y) positions
-        (2) ideal arc, i.e., version of arc object where position errors (1)
-            are zero
-        (3) list of close arcs the object comes nearest to
+        Based on the number of balls, determine ideal throw and catch
+        locations. Also calculate any asymmetry in throw/catch timing and
+        translate this to a delta in y-position (cm).
+
+        Add to run_dict:
+        (1) width of the pattern (cm)
+        (2) target throw points, right and left (cm)
+        (3) target catch points, right and left (cm)
+
+        Add to individual arcs in run (third throw in run and later):
+        (4) timing error in throw (seconds)
+        (5) timing error in throw, translated to Delta-y (cm)
+        (6) timing error in catch (seconds)
+        (7) timing error in catch, translated to Delta-y (cm)
         """
         notes = self.notes
-
         run = run_dict['throw']
-        for arc in run:
-            arc.error = None
-            arc.ideal = None
-            arc.close_arcs = None
-        if len(run) < 3:
-            return
 
+        # find pattern width
+        catch_left_avg = mean(t.x_catch for t in run
+                              if t.hand_catch == 'left')
+        catch_right_avg = mean(t.x_catch for t in run
+                               if t.hand_catch == 'right')
+        width = notes['cm_per_pixel'] * (catch_left_avg - catch_right_avg)
+        run_dict['width'] = width
+
+        # Find ideal amount of scoop (P), as a fraction of width. These
+        # values are from an analytical model that minimizes the probability
+        # of collisions under an assumption of normally-distributed throw
+        # errors.
         balls = run_dict['balls']
-        # PoverW_ideal = 0.32
+        PoverW_ideal = [0.0, 0.5, 0.5, 0.4,
+                        0.4, 0.38, 0.45, 0.32,
+                        0.45, 0.26, 0.45, 0.23,
+                        0.45, 0.19, 0.45]
+        PoverW_target = PoverW_ideal[balls] if balls < 15 else 0.3
 
+        run_dict['target throw point cm'] = (0.5 - PoverW_target) * width
+        run_dict['target catch point cm'] = 0.5 * width
+
+        # Figure out the errors in throw and catch timing. Do this by
+        # defining a window of neighboring arcs and doing a linear
+        # regression to interpolate an ideal time for the arc in question.
         sorted_run = sorted(run, key=lambda a: a.throw_id)
 
         for throw_idx in range(2, len(run)):
             arc = sorted_run[throw_idx]
 
-            # set of other arcs likeliest to collide with this one:
+            # calculate error in throw timing; window is the set of other arcs
+            # likeliest to collide with this one:
             if balls % 2 == 0:
                 window = [-2, 2]
             else:
                 window = [-2, -1, 1, 2]
             window = [x for x in window if 0 <= (throw_idx + x) < len(run)]
-            if len(window) < 2:
-                continue
 
-            N = X = X2 = F = XF = C = 0
-            for x in window:
-                arc2 = sorted_run[throw_idx + x]
-                N += 1
-                X += x
-                X2 += x * x
-                F += arc2.f_throw
-                XF += x * arc2.f_throw
-                C += arc2.c     # y-coordinate (pixels) at peak
+            if len(window) > 2:
+                # do linear regression over the throwing window
+                N = X = X2 = F = XF = 0
+                for x in window:
+                    arc2 = sorted_run[throw_idx + x]
+                    N += 1
+                    X += x
+                    X2 += x * x
+                    F += arc2.f_throw
+                    XF += x * arc2.f_throw
+                f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
+                arc.throw_error_s = ((arc.f_throw - f_throw_ideal)
+                                     / notes['fps'])
+                # sign convention: positive delta-y corresponds to throws
+                # that are thrown early (i.e. negative delta-t)
+                arc.throw_error_cm = ((2.0 * arc.e * notes['fps']**2 *
+                                       notes['cm_per_pixel'])
+                                      * arc.throw_error_s)
 
-            # print('len(window) = {}'.format(len(window)))
+            # same thing but for catching; window is neighboring catches into
+            # the same hand
+            arc_prev = max((arc2 for arc2 in run
+                            if (arc2.f_catch < arc.f_catch
+                                and arc2.hand_catch == arc.hand_catch)),
+                           key=lambda a: a.f_catch, default=None)
+            arc_next = min((arc2 for arc2 in run
+                            if (arc2.f_catch > arc.f_catch
+                                and arc2.hand_catch == arc.hand_catch)),
+                           key=lambda a: a.f_catch, default=None)
 
-            """
-            f_throw_ideal = (X2 * F - X * XF) / (X2 * N - X * X)
-            c_ideal = C / N
-            e_ideal = arc.e
-            """
+            if arc_prev is not None and arc_next is not None:
+                f_catch_ideal = 0.5 * (arc_prev.f_catch + arc_next.f_catch)
+                arc.catch_error_s = ((arc.f_catch - f_catch_ideal)
+                                     / notes['fps'])
+                # sign convention: negative delta-y corresponds to throws
+                # that are caught early (i.e. negative delta-t)
+                arc.catch_error_cm = ((-2.0 * arc.e * notes['fps']**2 *
+                                       notes['cm_per_pixel'])
+                                      * arc.catch_error_s)
 
-            """
-            if sum(1 for t in run if t.hand_catch == 'left') == 0:
-                continue
-            if sum(1 for t in run if t.hand_catch == 'right') == 0:
-                continue
-
-            # find the target width and height of the pattern
-            catch_left_avg = mean(t.x_catch for t in run
-                                             if t.hand_catch == 'left')
-            catch_right_avg = mean(t.x_catch for t in run
-                                              if t.hand_catch == 'right')
-            width = catch_left_avg - catch_right_avg
-            height = mean(t.height for t in run)
-
-            if balls == 9:
-                ideal_x_throw = (0.5 * width) * 0.55
-            else:
-                ideal_x_throw = (0.5 * width) * 0.5
-
-            for arc in run:
-                # make an 'ideal' arc with the same throw time as arc,
-                # but perfect height, throw location, and catch location
-
-                # ideal catch time is calculated using weighted average
-                # of catch times for previous catches into the same hand
-                prev_arcs = [t for t in run if t.f_catch < arc.f_catch
-                             and t.hand_catch == arc.hand_catch]
-                if len(prev_arcs) < 2:
-                    # need at least two prior catches for least squares
-                    # fitting
-                    continue
-
-                ideal_arc = Ballarc()
-                ideal_arc.f_throw = arc.f_throw
-                ideal_arc.e = arc.e
-                ideal_arc.x_origin = arc.x_origin
-                ideal_arc.y_origin = arc.y_origin
-
-                prev_arcs = sorted(prev_arcs, key=lambda x: x.f_catch,
-                                   reverse=True)
-                num_to_fit = max(2, floor((balls - 1) / 2))
-                A = IA = I2A = AY = IAY = 0.0
-                for i, prev_arc in enumerate(prev_arcs[:num_to_fit], start=1):
-                    alpha = 1.0 / 2**i
-                    A += alpha
-                    IA += i * alpha
-                    I2A += i * i * alpha
-                    AY += alpha * prev_arc.f_catch
-                    IAY += i * alpha * prev_arc.f_catch
-                ideal_arc.f_catch = (I2A * AY - IA * IAY) / (I2A * A - IA * IA)
-
-                df = 0.5 * (ideal_arc.f_catch - ideal_arc.f_throw)
-                ideal_arc.f_peak = ideal_arc.f_throw + df
-                height = ideal_arc.e * df**2
-                ideal_arc.c = ideal_arc.y_origin - height
-
-                ideal_arc.x_throw = (ideal_x_throw if arc.hand_throw == 'left'
-                                     else -ideal_x_throw)
-                ideal_arc.x_catch = ((0.5 * width) if arc.hand_catch == 'left'
-                                     else -(0.5 * width))
-
-                ideal_arc.a = ideal_arc.x_origin + 0.5 * (ideal_arc.x_catch +
-                                                          ideal_arc.x_throw)
-                ideal_arc.b = ((ideal_arc.x_catch - ideal_arc.x_throw) /
-                               (2.0 * df))
-
-                arc.ideal = ideal_arc
-            """
-
-            for arc in run:
-                close_arcs = [(a, arc.closest_approach_frame(a, notes))
-                              for a in run if a is not arc and
-                              a.f_throw < arc.f_catch and
-                              a.f_catch > arc.f_throw]
-                close_arcs = [(a.throw_id, f,
-                               arc.get_distance_from_arc(a, f, notes))
-                              for a, f in close_arcs]
-                close_arcs = sorted(close_arcs, key=lambda x: x[2])
-
-                arc.close_arcs = close_arcs
+            if self._verbosity >= 3:
+                output = f'arc {arc.throw_id}: '
+                if arc.throw_error_s is not None:
+                    output += (f'throw {arc.throw_error_s:.3f} s '
+                               f'({arc.throw_error_cm:.1f} cm), ')
+                else:
+                    output += 'throw None, '
+                if arc.catch_error_s is not None:
+                    output += (f'catch {arc.catch_error_s:.3f} s '
+                               f'({arc.catch_error_cm:.1f} cm)')
+                else:
+                    output += 'catch None'
+                print(output)
 
     # --------------------------------------------------------------------------
     #  Non-member functions
@@ -2359,14 +2347,6 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                                     font, 0.3, (255, 255, 255), 1,
                                     cv2.LINE_AA)
 
-                    if arc.x_origin is not None:
-                        # find (x_origin, y_origin) in screen coordinates:
-                        c = cos(notes['camera_tilt'])
-                        s = sin(notes['camera_tilt'])
-                        xo_scr = int(arc.x_origin*c + arc.y_origin*s + 0.5)
-                        yo_scr = int(-arc.x_origin*s + arc.y_origin*c + 0.5)
-                        cv2.circle(frame, (xo_scr, yo_scr), 3, (255, 0, 0), -1)
-
             cv2.rectangle(frame, (3, 3), (80, 27), (0, 0, 0), -1)
             cv2.putText(frame, format(framenum, ' 7d'), (10, 20), font, 0.5,
                         (255, 255, 255), 1, cv2.LINE_AA)
@@ -2410,11 +2390,11 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 if __name__ == '__main__':
 
     # _filename = 'movies/juggling_test_5.mov'
-    # _filename = 'movies/TBTB3_9balls.mov'
-    _filename = 'movies/GOPR0553.MP4'
+    _filename = 'movies/TBTB3_9balls.mov'
+    # _filename = 'movies/GOPR0553.MP4'
     # _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
-    _scanvideo = 'movies/__Hawkeye__/GOPR0553_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/GOPR0553_640x480.mp4'
 
     watch_video = False
 
