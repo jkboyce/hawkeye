@@ -183,8 +183,28 @@ class HEVideoView(QGraphicsView):
 
         points_per_parabola = 20
 
+        run_id = None
+        for rid, run_dict in enumerate(notes['run'], start=1):
+            frame_start, frame_end = run_dict['frame range']
+            if frame_start <= framenum <= frame_end:
+                run_id = rid
+                break
+
         for arc in notes['arcs']:
-            # find arcs that are visible in this frame
+            # draw accuracy overlay for arcs in current run
+            if (run_id is not None and arc.run_id == run_id
+                    and arc.throw_id > 2):
+                x, y, w, h, _ = notes['body'][round(arc.f_peak)]
+                center_x_px = x + 0.5 * w      # pixel units
+                center_y_px = y + h
+
+                arc_tx_px, _ = arc.get_position(arc.f_throw, notes)
+                arc_cx_px, _ = arc.get_position(arc.f_catch, notes)
+
+
+
+
+            # only continue for arcs that are visible in this frame
             start, end = round(arc.f_throw), round(arc.f_catch)
             if framenum < start or framenum > end:
                 continue
@@ -278,7 +298,7 @@ class HEVideoView(QGraphicsView):
                 # draw ideal throw and catch points
                 if prefs['ideal_points']:
                     # find centerline
-                    x, y, w, h, _ = notes['body'][notes_framenum]
+                    x, y, w, h, _ = notes['body'][round(arc.f_peak)]
                     center_x_px = x + 0.5 * w      # pixel units
                     center_y_px = y + h
 
