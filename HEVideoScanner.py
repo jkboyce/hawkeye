@@ -445,7 +445,7 @@ class HEVideoScanner:
                 body_h = body_average[3] * scan_scaledown
 
                 notes['body'][framenum] = (body_x, body_y, body_w, body_h,
-                                           True)
+                                           frames_with_no_body == 0)
                 if display:
                     x = int(round(body_average[0]))
                     y = int(round(body_average[1]))

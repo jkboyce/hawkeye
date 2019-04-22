@@ -134,13 +134,16 @@ class HEVideoView(QGraphicsView):
 
         # draw box around juggler torso
         if prefs['torso'] and notes_framenum in notes['body']:
-            x, y, w, h, _ = notes['body'][notes_framenum]
+            x, y, w, h, detected = notes['body'][notes_framenum]
             dUL_x, dUL_y = mapToDisplayVideo(x, y)
             dLR_x, dLR_y = mapToDisplayVideo(x + w, y + h)
             # upper-left and lower-right points respectively:
             bodyUL_x, bodyUL_y = self.mapToView(dUL_x, dUL_y)
             bodyLR_x, bodyLR_y = self.mapToView(dLR_x, dLR_y)
-            painter.setPen(Qt.blue)
+            pen = QPen(Qt.blue)
+            if not detected:
+                pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
             painter.setOpacity(1.0)
             painter.drawRect(bodyUL_x, bodyUL_y,
@@ -308,12 +311,25 @@ class HEVideoView(QGraphicsView):
                     ctx, cty = self.mapToView(ctx_dv, cty_dv)
 
                     painter.setPen(QPen(Qt.red, 2))
-                    painter.setBrush(Qt.red)
                     painter.setOpacity(1.0)
                     painter.drawLine(round(tbx), round(tby),
                                      round(ttx), round(tty))
                     painter.drawLine(round(cbx), round(cby),
                                      round(ctx), round(cty))
+
+                    # draw centerline marker, if not showing torso box
+                    if not prefs['torso']:
+                        cenbx_dv, cenby_dv = mapToDisplayVideo(
+                                center_x_px, center_y_px + len_px)
+                        centx_dv, centy_dv = mapToDisplayVideo(
+                                center_x_px, center_y_px - len_px)
+                        cenbx, cenby = self.mapToView(cenbx_dv, cenby_dv)
+                        centx, centy = self.mapToView(centx_dv, centy_dv)
+
+                        painter.setPen(QPen(Qt.blue, 2))
+                        painter.setOpacity(1.0)
+                        painter.drawLine(round(cenbx), round(cenby),
+                                         round(centx), round(centy))
 
             # draw throw number next to arc position
             if prefs['throw_labels']:
