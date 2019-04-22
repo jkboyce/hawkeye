@@ -107,7 +107,7 @@ class HEVideoScanner:
         ideal catch location from centerline (float)
     """
 
-    CURRENT_NOTES_VERSION = 1
+    CURRENT_NOTES_VERSION = 2
 
     def __init__(self, filename, scanvideo=None, params=None):
         """
@@ -1982,7 +1982,7 @@ class HEVideoScanner:
         run = run_dict['throw']
         duration = run_dict['duration']
         tps = run_dict['throws per sec']
-        height = run_dict['height']
+        height = self.notes['cm_per_pixel'] * mean(arc.height for arc in run)
 
         if tps is None:
             # should never happen
@@ -2390,11 +2390,11 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 if __name__ == '__main__':
 
     # _filename = 'movies/juggling_test_5.mov'
-    _filename = 'movies/TBTB3_9balls.mov'
-    # _filename = 'movies/GOPR0553.MP4'
+    # _filename = 'movies/TBTB3_9balls.mov'
+    _filename = 'movies/GOPR0622.MP4'
     # _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
-    _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/GOPR0553_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/GOPR0622_640x480.mp4'
 
     watch_video = False
 
