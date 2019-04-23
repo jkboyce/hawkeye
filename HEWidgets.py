@@ -7,6 +7,7 @@
 import os
 import platform
 from math import log10, floor
+from statistics import mean, stdev
 
 from PySide2.QtCore import QObject, Slot, QSize, Qt, QPoint, QPointF
 from PySide2.QtGui import QPainter, QPainterPath, QPen
@@ -181,8 +182,7 @@ class HEVideoView(QGraphicsView):
                 painter.setOpacity(1.0)
                 painter.drawEllipse(QPoint(center_x, center_y), radius, radius)
 
-        points_per_parabola = 20
-
+        # figure out which run number we're in, if any
         run_id = None
         for rid, run_dict in enumerate(notes['run'], start=1):
             frame_start, frame_end = run_dict['frame range']
@@ -190,27 +190,218 @@ class HEVideoView(QGraphicsView):
                 run_id = rid
                 break
 
-        for arc in notes['arcs']:
-            # draw accuracy overlay for arcs in current run
-            if (run_id is not None and arc.run_id == run_id
-                    and arc.throw_id > 2):
+        # draw accuracy overlay
+        if prefs['ideal_points'] and run_id is not None:
+            peaks_right_x = []
+            peaks_right_y = []
+            peaks_left_x = []
+            peaks_left_y = []
+            throws_right_x = []
+            throws_left_x = []
+            catches_right_x = []
+            catches_left_x = []
+            on_start_of_right_throw = False
+            on_start_of_right_catch = False
+            on_start_of_left_throw = False
+            on_start_of_left_catch = False
+
+            # position of origin, in view coordinates
+            x, y, w, h, _ = notes['body'][notes_framenum]
+            origin_x_px = x + 0.5 * w
+            origin_y_px = y + h
+            origin_x_dv, origin_y_dv = mapToDisplayVideo(
+                    origin_x_px, origin_y_px)
+            origin_x, origin_y = self.mapToView(origin_x_dv, origin_y_dv)
+
+            # work out scaling from centimeters to view
+            torso_top_x_dv, torso_top_y_dv = mapToDisplayVideo(
+                    origin_x_px, y)
+            torso_top_x, torso_top_y = self.mapToView(torso_top_x_dv,
+                                                      torso_top_y_dv)
+            view_px_per_cm = (origin_y - torso_top_y) / h
+
+            # scan through arcs in run and assemble info needed for drawing
+            for arc in notes['arcs']:
+                if run_id is None or arc.run_id != run_id or arc.throw_id < 3:
+                    continue
+
+                arc_tx_px, arc_ty_px = arc.get_position(arc.f_throw, notes)
+                arc_cx_px, arc_cy_px = arc.get_position(arc.f_catch, notes)
+                arc_px_px, arc_py_px = arc.get_position(arc.f_peak, notes)
+
                 x, y, w, h, _ = notes['body'][round(arc.f_peak)]
-                center_x_px = x + 0.5 * w      # pixel units
-                center_y_px = y + h
+                arc_origin_x_px = x + 0.5 * w      # pixel units
+                arc_origin_y_px = y + h
 
-                arc_tx_px, _ = arc.get_position(arc.f_throw, notes)
-                arc_cx_px, _ = arc.get_position(arc.f_catch, notes)
+                if arc.hand_throw == 'right':
+                    peaks_x = peaks_right_x
+                    peaks_y = peaks_right_y
+                    throws_x = throws_right_x
+                else:
+                    peaks_x = peaks_left_x
+                    peaks_y = peaks_left_y
+                    throws_x = throws_left_x
 
+                if arc.hand_catch == 'right':
+                    catches_x = catches_right_x
+                else:
+                    catches_x = catches_left_x
 
+                if round(arc.f_throw) == framenum:
+                    if arc.hand_throw == 'right':
+                        on_start_of_right_throw = True
+                    else:
+                        on_start_of_left_throw = True
+                    if arc.hand_catch == 'right':
+                        on_start_of_right_catch = True
+                    else:
+                        on_start_of_left_catch = True
 
+                # peak location
+                arc_px_px += origin_x_px - arc_origin_x_px
+                arc_py_px += origin_y_px - arc_origin_y_px
+                d_arc_px, d_arc_py = mapToDisplayVideo(arc_px_px, arc_py_px)
+                arc_px, arc_py = self.mapToView(d_arc_px, d_arc_py)
+                peaks_x.append(arc_px)
+                peaks_y.append(arc_py)
 
-            # only continue for arcs that are visible in this frame
+                # throw location
+                arc_tx_px += origin_x_px - arc_origin_x_px
+                arc_ty_px += origin_y_px - arc_origin_y_px
+                d_arc_tx, d_arc_ty = mapToDisplayVideo(arc_tx_px, arc_ty_px)
+                arc_tx, _ = self.mapToView(d_arc_tx, d_arc_ty)
+                throws_x.append(arc_tx)
+
+                # catch location
+                arc_cx_px += origin_x_px - arc_origin_x_px
+                arc_cy_px += origin_y_px - arc_origin_y_px
+                d_arc_cx, d_arc_cy = mapToDisplayVideo(arc_cx_px, arc_cy_px)
+                arc_cx, _ = self.mapToView(d_arc_cx, d_arc_cy)
+                catches_x.append(arc_cx)
+
+            # draw items for right hand
+            pen = QPen(Qt.yellow)
+            pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.setOpacity(1.0)
+
+            if len(peaks_right_x) > 1:
+                center_x = mean(peaks_right_x)
+                radius_x = stdev(peaks_right_x)
+                center_y = mean(peaks_right_y)
+                radius_y = stdev(peaks_right_y)
+                painter.drawEllipse(QPoint(center_x, center_y),
+                                    radius_x, radius_y)
+
+            painter.setBrush(Qt.black)
+
+            if len(throws_right_x) > 1:
+                center_x = mean(throws_right_x)
+                dx = stdev(throws_right_x)
+                dy = 5.0 * view_px_per_cm
+                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            if len(catches_right_x) > 1:
+                center_x = mean(catches_right_x)
+                dx = stdev(catches_right_x)
+                dy = 5.0 * view_px_per_cm
+                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            # draw ideal throw and catch points for right hand
+            run_dict = notes['run'][run_id - 1]
+            throw_offset_px = (run_dict['target throw point cm']
+                               / notes['cm_per_pixel'])
+            catch_offset_px = (run_dict['target catch point cm']
+                               / notes['cm_per_pixel'])
+
+            tx_px = origin_x_px - throw_offset_px
+            tx_dv, ty_dv = mapToDisplayVideo(tx_px, origin_y_px)
+            tx, ty = self.mapToView(tx_dv, ty_dv)
+            pen.setColor(Qt.red if on_start_of_right_throw else Qt.yellow)
+            pen.setStyle(Qt.SolidLine)
+            painter.setPen(pen)
+            painter.drawLine(round(tx), round(ty - 10.0 * view_px_per_cm),
+                             round(tx), round(ty + 10.0 * view_px_per_cm))
+
+            cx_px = origin_x_px - catch_offset_px
+            cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
+            cx, cy = self.mapToView(cx_dv, cy_dv)
+            pen.setColor(Qt.red if on_start_of_right_catch else Qt.yellow)
+            pen.setStyle(Qt.SolidLine)
+            painter.setPen(pen)
+            painter.drawLine(round(cx), round(cy - 10.0 * view_px_per_cm),
+                             round(cx), round(cy + 10.0 * view_px_per_cm))
+
+            # draw same items for left hand
+            pen = QPen(Qt.green)
+            pen.setStyle(Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+
+            if len(peaks_left_x) > 1:
+                center_x = mean(peaks_left_x)
+                radius_x = stdev(peaks_left_x)
+                center_y = mean(peaks_left_y)
+                radius_y = stdev(peaks_left_y)
+                painter.drawEllipse(QPoint(center_x, center_y),
+                                    radius_x, radius_y)
+
+            painter.setBrush(Qt.black)
+
+            if len(throws_left_x) > 1:
+                center_x = mean(throws_left_x)
+                dx = stdev(throws_left_x)
+                dy = 5.0 * view_px_per_cm
+                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            if len(catches_left_x) > 1:
+                center_x = mean(catches_left_x)
+                dx = stdev(catches_left_x)
+                dy = 5.0 * view_px_per_cm
+                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            tx_px = origin_x_px + throw_offset_px
+            tx_dv, ty_dv = mapToDisplayVideo(tx_px, origin_y_px)
+            tx, ty = self.mapToView(tx_dv, ty_dv)
+            pen.setColor(Qt.red if on_start_of_left_throw else Qt.green)
+            pen.setStyle(Qt.SolidLine)
+            painter.setPen(pen)
+            painter.drawLine(round(tx), round(ty - 10.0 * view_px_per_cm),
+                             round(tx), round(ty + 10.0 * view_px_per_cm))
+
+            cx_px = origin_x_px + catch_offset_px
+            cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
+            cx, cy = self.mapToView(cx_dv, cy_dv)
+            pen.setColor(Qt.red if on_start_of_left_catch else Qt.green)
+            pen.setStyle(Qt.SolidLine)
+            painter.setPen(pen)
+            painter.drawLine(round(cx), round(cy - 10.0 * view_px_per_cm),
+                             round(cx), round(cy + 10.0 * view_px_per_cm))
+
+            # draw centerline marker, if not showing torso box
+            if not prefs['torso']:
+                painter.setPen(QPen(Qt.blue, 2))
+                painter.setOpacity(1.0)
+                painter.drawLine(round(origin_x),
+                                 round(origin_y - 10.0 * view_px_per_cm),
+                                 round(origin_x),
+                                 round(origin_y + 10.0 * view_px_per_cm))
+
+        points_per_parabola = 20
+
+        for arc in notes['arcs']:
+            # skip arcs not visible in this frame
             start, end = round(arc.f_throw), round(arc.f_catch)
             if framenum < start or framenum > end:
                 continue
 
             # draw arc parabola
-            if prefs['parabolas']:
+            if prefs['parabolas'] or (prefs['ideal_points'] and framenum == start):
                 path = QPainterPath()
                 for i in range(points_per_parabola):
                     f_point = (arc.f_throw + i *
@@ -294,62 +485,6 @@ class HEVideoView(QGraphicsView):
                     painter.drawEllipse(QPoint(xc, yc), 2, 2)
                     painter.drawLine(round(xt), round(yt),
                                      round(xc), round(yc))
-
-                # draw ideal throw and catch points
-                if prefs['ideal_points']:
-                    # find centerline
-                    x, y, w, h, _ = notes['body'][round(arc.f_peak)]
-                    center_x_px = x + 0.5 * w      # pixel units
-                    center_y_px = y + h
-
-                    run_dict = notes['run'][arc.run_id - 1]
-                    throw_offset_px = (run_dict['target throw point cm']
-                                       / notes['cm_per_pixel'])
-                    catch_offset_px = (run_dict['target catch point cm']
-                                       / notes['cm_per_pixel'])
-                    len_px = 5.0 / notes['cm_per_pixel']
-
-                    tx_px = (center_x_px - throw_offset_px
-                             if arc.hand_throw == 'right'
-                             else center_x_px + throw_offset_px)
-                    cx_px = (center_x_px - catch_offset_px
-                             if arc.hand_catch == 'right'
-                             else center_x_px + catch_offset_px)
-
-                    tbx_dv, tby_dv = mapToDisplayVideo(
-                            tx_px, center_y_px + len_px)
-                    ttx_dv, tty_dv = mapToDisplayVideo(
-                            tx_px, center_y_px - len_px)
-                    tbx, tby = self.mapToView(tbx_dv, tby_dv)
-                    ttx, tty = self.mapToView(ttx_dv, tty_dv)
-
-                    cbx_dv, cby_dv = mapToDisplayVideo(
-                            cx_px, center_y_px + len_px)
-                    ctx_dv, cty_dv = mapToDisplayVideo(
-                            cx_px, center_y_px - len_px)
-                    cbx, cby = self.mapToView(cbx_dv, cby_dv)
-                    ctx, cty = self.mapToView(ctx_dv, cty_dv)
-
-                    painter.setPen(QPen(Qt.red, 2))
-                    painter.setOpacity(1.0)
-                    painter.drawLine(round(tbx), round(tby),
-                                     round(ttx), round(tty))
-                    painter.drawLine(round(cbx), round(cby),
-                                     round(ctx), round(cty))
-
-                    # draw centerline marker, if not showing torso box
-                    if not prefs['torso']:
-                        cenbx_dv, cenby_dv = mapToDisplayVideo(
-                                center_x_px, center_y_px + len_px)
-                        centx_dv, centy_dv = mapToDisplayVideo(
-                                center_x_px, center_y_px - len_px)
-                        cenbx, cenby = self.mapToView(cenbx_dv, cenby_dv)
-                        centx, centy = self.mapToView(centx_dv, centy_dv)
-
-                        painter.setPen(QPen(Qt.blue, 2))
-                        painter.setOpacity(1.0)
-                        painter.drawLine(round(cenbx), round(cenby),
-                                         round(centx), round(centy))
 
             # draw throw number next to arc position
             if prefs['throw_labels']:
