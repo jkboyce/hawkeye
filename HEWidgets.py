@@ -11,9 +11,9 @@ from statistics import mean, stdev
 
 from PySide2.QtCore import QObject, Slot, QSize, Qt, QPoint, QPointF
 from PySide2.QtGui import QPainter, QPainterPath, QPen
-from PySide2.QtWidgets import (QWidget, QGraphicsView, QGraphicsScene,
-                               QListWidget, QListWidgetItem, QAbstractItemView,
-                               QStyledItemDelegate, QStyle)
+from PySide2.QtWidgets import (QGraphicsView, QGraphicsScene, QListWidget,
+                               QListWidgetItem, QAbstractItemView, QStyle,
+                               QStyledItemDelegate)
 from PySide2.QtMultimedia import QMediaPlayer
 from PySide2.QtMultimediaWidgets import QGraphicsVideoItem
 
@@ -406,7 +406,8 @@ class HEVideoView(QGraphicsView):
                 continue
 
             # draw arc parabola
-            if prefs['parabolas'] or (prefs['ideal_points'] and framenum == start):
+            if (prefs['parabolas'] or (prefs['ideal_points']
+                                       and framenum == start)):
                 path = QPainterPath()
                 for i in range(points_per_parabola):
                     f_point = (arc.f_throw + i *
@@ -787,48 +788,5 @@ class HETableViewDelegate(QStyledItemDelegate):
             painter.setPen(self.pen)
             painter.drawLine(item.rect.topLeft(), item.rect.topRight())
             painter.setPen(oldPen)
-
-# -----------------------------------------------------------------------------
-
-
-class HEStatsChart(QWidget):
-    """
-    Widget that draws the statistics chart for a given run.
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.run_dict = None
-
-    def setRunDict(self, run_dict):
-        self.run_dict = run_dict
-        # print('set new run, throws = {}'.format(run_dict['throws']))
-
-    def paintEvent(self, e):
-        super().paintEvent(e)
-        w, h = self.width(), self.height()
-        xl, xu = 0.25 * w, 0.3 * w
-        f = 0.02
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        # white background
-        pen = QPen(Qt.white)
-        painter.setPen(pen)
-        painter.setBrush(Qt.white)
-        painter.drawRect(0, 0, w - 1, h - 1)
-
-        # axes
-        pen.setColor(Qt.lightGray)
-        pen.setStyle(Qt.DashLine)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawLine(f * w, 0.25 * h, (1 - f) * w, 0.25 * h)
-        painter.drawLine(f * w, 0.75 * h, (1 - f) * w, 0.75 * h)
-        painter.drawLine(xl, (0.5 + f) * h, xl, (1 - f) * h)
-        painter.drawLine(w - xl, (0.5 + f) * h, w - xl, (1 - f) * h)
-        painter.drawLine(xu, f * h, xu, (0.5 - f) * h)
-        painter.drawLine(w - xu, f * h, w - xu, (0.5 - f) * h)
-        if self.run_dict is None:
-            return
 
 # -----------------------------------------------------------------------------

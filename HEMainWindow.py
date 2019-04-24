@@ -22,7 +22,7 @@ from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
 
 from HEWorker import HEWorker
 from HEWidgets import (HEVideoView, HEVideoList, HEViewList,
-                       HETableViewDelegate, HEStatsChart)
+                       HETableViewDelegate)
 
 
 class HEMainWindow(QMainWindow):
@@ -86,7 +86,6 @@ class HEMainWindow(QMainWindow):
         player_widget = self.makePlayerWidget()
         prefs_widget = self.makePrefsWidget()
         output_widget = self.makeScannerOutputWidget()
-        stats_widget = self.makeStatsWidget()
         data_widget = self.makeDataWidget()
         about_widget = self.makeAboutWidget()
 
@@ -99,10 +98,9 @@ class HEMainWindow(QMainWindow):
         self.views_stackedWidget = QStackedWidget()
         self.views_stackedWidget.addWidget(self.player_stackedWidget)
         self.views_stackedWidget.addWidget(output_widget)
-        self.views_stackedWidget.addWidget(stats_widget)
         self.views_stackedWidget.addWidget(data_widget)
         self.views_stackedWidget.addWidget(about_widget)
-        self.views_stackedWidget.setCurrentIndex(4)
+        self.views_stackedWidget.setCurrentIndex(3)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(lists_widget)
@@ -356,28 +354,6 @@ class HEMainWindow(QMainWindow):
         output_widget = QWidget()
         output_widget.setLayout(output_layout)
         return output_widget
-
-    def makeStatsWidget(self):
-        """
-        A chart depicting descriptive information for a given run. This uses
-        the custom widget HEStatsChart to do the display.
-        """
-        stats_layout = QVBoxLayout()
-        layout_runselect = QHBoxLayout()
-        layout_runselect.setAlignment(Qt.AlignLeft)
-        layout_runselect.addWidget(QLabel('Run:'))
-        self.stats_run = QComboBox()
-        self.stats_run.setEditable(False)
-        self.stats_run.currentIndexChanged.connect(self.statsRunChanged)
-        layout_runselect.addWidget(self.stats_run)
-        stats_layout.addLayout(layout_runselect)
-        self.chartWidget = HEStatsChart(self)
-        self.chartWidget.setSizePolicy(QSizePolicy.Expanding,
-                                       QSizePolicy.Expanding)
-        stats_layout.addWidget(self.chartWidget)
-        stats_widget = QWidget()
-        stats_widget.setLayout(stats_layout)
-        return stats_widget
 
     def makeDataWidget(self):
         """
@@ -844,15 +820,6 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
-            """
-            headeritem = QListWidgetItem('')
-            headeritem._type = 'stats'
-            headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
-            header = QLabel('Stats')
-            self.viewList.addItem(headeritem)
-            self.viewList.setItemWidget(headeritem, header)
-            """
-
             headeritem = QListWidgetItem('')
             headeritem._type = 'data'
             headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
@@ -909,18 +876,12 @@ class HEMainWindow(QMainWindow):
                         self.currentVideoItem.vc.processing_steps_total)
                 self.progressBar.show()
             self.views_stackedWidget.setCurrentIndex(1)
-        elif item._type == 'stats':
-            notes = self.currentVideoItem.vc.notes
-            if notes is not None:
-                self.pauseMovie()
-                self.fillStatsView(notes)
-                self.views_stackedWidget.setCurrentIndex(2)
         elif item._type == 'data':
             notes = self.currentVideoItem.vc.notes
             if notes is not None:
                 self.pauseMovie()
                 self.fillDataView(notes)
-                self.views_stackedWidget.setCurrentIndex(3)
+                self.views_stackedWidget.setCurrentIndex(2)
         elif item._type == 'run':
             self.views_stackedWidget.setCurrentIndex(0)
             self.playMovie()
@@ -928,28 +889,6 @@ class HEMainWindow(QMainWindow):
         else:
             # shouldn't ever get here
             pass
-
-    def fillStatsView(self, notes):
-        """
-        Fill in the Stats view when the user wants to view it.
-        """
-        self.stats_run.clear()
-        if notes is None or notes['runs'] < 1:
-            return
-        for run_num in range(notes['runs']):
-            self.stats_run.insertItem(run_num, str(run_num + 1))
-        self.stats_run.setCurrentText('1')
-
-    @Slot(int)
-    def statsRunChanged(self, index: int):
-        """
-        Called when a new run is selected in the Stats view combo box.
-        """
-        if self.currentVideoItem is None:
-            return
-        notes = self.currentVideoItem.vc.notes
-        if notes is not None:
-            self.chartWidget.setRunDict(notes['run'][index])
 
     def fillDataView(self, notes):
         """
@@ -1112,7 +1051,8 @@ class HEMainWindow(QMainWindow):
         self.prefs['parabolas'] = self.prefs_parabolas.isChecked()
         self.prefs['carries'] = self.prefs_carries.isChecked()
         self.prefs['ideal_points'] = self.prefs_ideal_points.isChecked()
-        self.prefs['accuracy_overlay'] = self.prefs_accuracy_overlay.isChecked()
+        self.prefs['accuracy_overlay'] = \
+            self.prefs_accuracy_overlay.isChecked()
         self.prefs['torso'] = self.prefs_torso.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
         self.sig_new_prefs.emit(self.prefs)
@@ -1155,7 +1095,7 @@ class HEMainWindow(QMainWindow):
         Called when the user clicks the about icon in the UI.
         """
         self.pauseMovie()
-        self.views_stackedWidget.setCurrentIndex(4)
+        self.views_stackedWidget.setCurrentIndex(3)
 
     @Slot()
     def cancelAbout(self):
