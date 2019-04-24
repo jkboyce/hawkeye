@@ -54,11 +54,12 @@ class HEMainWindow(QMainWindow):
         self.stepBackwardUntil = None
 
         self.prefs = {
-            'markers': True,
-            'parabolas': True,
+            'markers': False,
             'throw_labels': True,
-            'ideal_points': True,
+            'parabolas': True,
             'carries': True,
+            'ideal_points': True,
+            'accuracy_overlay': True,
             'torso': False,
             'resolution': 'Actual size'
         }
@@ -271,11 +272,13 @@ class HEMainWindow(QMainWindow):
         The preferences panel that is shown when the settings icon is clicked.
         """
         self.prefs_markers = QCheckBox('Ball detections')
-        self.prefs_parabolas = QCheckBox('Ball arcs')
         self.prefs_throwlabels = QCheckBox('Throw number labels')
+        self.prefs_parabolas = QCheckBox('Ball arcs')
+        self.prefs_carries = QCheckBox('Hand carry distances')
         self.prefs_ideal_points = QCheckBox(
                     'Ideal throw and catch points')
-        self.prefs_carries = QCheckBox('Hand carry distances')
+        self.prefs_accuracy_overlay = QCheckBox(
+                    'Throwing accuracy overlay')
         self.prefs_torso = QCheckBox('Torso position')
 
         resolution_layout = QHBoxLayout()
@@ -294,10 +297,11 @@ class HEMainWindow(QMainWindow):
         controls_layout.setAlignment(Qt.AlignVCenter)
         controls_layout.addWidget(QLabel('Video display options:'))
         controls_layout.addWidget(self.prefs_markers)
-        controls_layout.addWidget(self.prefs_parabolas)
         controls_layout.addWidget(self.prefs_throwlabels)
-        controls_layout.addWidget(self.prefs_ideal_points)
+        controls_layout.addWidget(self.prefs_parabolas)
         controls_layout.addWidget(self.prefs_carries)
+        controls_layout.addWidget(self.prefs_ideal_points)
+        controls_layout.addWidget(self.prefs_accuracy_overlay)
         controls_layout.addWidget(self.prefs_torso)
         controls_layout.addLayout(resolution_layout)
         controls_widget = QWidget()
@@ -418,11 +422,12 @@ class HEMainWindow(QMainWindow):
                '<p>Useful keyboard shortcuts when viewing video:</p>'
                '<ul>'
                '<li>space: toggle play/pause</li>'
-               '<li>up/down: toggle overlays</li>'
                '<li>left/right: step backward/forward by one frame '
                '(hold to continue cueing)</li>'
                '<li>z, x: step backward/forward by one throw</li>'
                '<li>a, s: step backward/forward by one run</li>'
+               '<li>down: toggle overlays</li>'
+               '<li>up: toggle accuracy-related overlays</li>'
                '<li>k: save video clip of current run</li>'
                '</ul>'
                '<p>&nbsp;</p>'
@@ -1087,11 +1092,12 @@ class HEMainWindow(QMainWindow):
         """
         self.pauseMovie()
         self.prefs_markers.setChecked(self.prefs['markers'])
-        self.prefs_torso.setChecked(self.prefs['torso'])
+        self.prefs_throwlabels.setChecked(self.prefs['throw_labels'])
         self.prefs_parabolas.setChecked(self.prefs['parabolas'])
         self.prefs_carries.setChecked(self.prefs['carries'])
-        self.prefs_throwlabels.setChecked(self.prefs['throw_labels'])
         self.prefs_ideal_points.setChecked(self.prefs['ideal_points'])
+        self.prefs_accuracy_overlay.setChecked(self.prefs['accuracy_overlay'])
+        self.prefs_torso.setChecked(self.prefs['torso'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
         self.player_stackedWidget.setCurrentIndex(1)
 
@@ -1102,11 +1108,12 @@ class HEMainWindow(QMainWindow):
         """
         old_resolution = self.prefs['resolution']
         self.prefs['markers'] = self.prefs_markers.isChecked()
-        self.prefs['torso'] = self.prefs_torso.isChecked()
+        self.prefs['throw_labels'] = self.prefs_throwlabels.isChecked()
         self.prefs['parabolas'] = self.prefs_parabolas.isChecked()
         self.prefs['carries'] = self.prefs_carries.isChecked()
-        self.prefs['throw_labels'] = self.prefs_throwlabels.isChecked()
         self.prefs['ideal_points'] = self.prefs_ideal_points.isChecked()
+        self.prefs['accuracy_overlay'] = self.prefs_accuracy_overlay.isChecked()
+        self.prefs['torso'] = self.prefs_torso.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
         self.sig_new_prefs.emit(self.prefs)
         self.player_stackedWidget.setCurrentIndex(0)
@@ -1428,10 +1435,17 @@ class HEMainWindow(QMainWindow):
                 self.stepBackward()     # see note above on step forward
             else:
                 self.stepBackwardUntil = framenum - 2
-        elif key == Qt.Key_Up or key == Qt.Key_Down:
+        elif key == Qt.Key_Down:
             # toggle overlays
             if notes is not None and notes['step'] >= 5:
                 vc.overlays = not vc.overlays
+                self.repaintPlayer()
+        elif key == Qt.Key_Up:
+            # toggle accuracy-related overlays
+            if notes is not None and notes['step'] >= 5:
+                active = not self.prefs['accuracy_overlay']
+                self.prefs['ideal_points'] = active
+                self.prefs['accuracy_overlay'] = active
                 self.repaintPlayer()
         elif key == Qt.Key_K and notes is not None:
             # save a video clip of the currently-selected run
