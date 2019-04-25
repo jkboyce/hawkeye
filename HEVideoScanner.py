@@ -11,6 +11,7 @@ import copy
 from math import sqrt, exp, isnan, atan, degrees, sin, cos
 from statistics import median, mean
 
+import numpy as np
 import cv2
 
 from HETypes import Balltag, Ballarc
@@ -107,7 +108,7 @@ class HEVideoScanner:
         ideal catch location from centerline (float)
     """
 
-    CURRENT_NOTES_VERSION = 2
+    CURRENT_NOTES_VERSION = 3
 
     def __init__(self, filename, scanvideo=None, params=None):
         """
@@ -140,10 +141,10 @@ class HEVideoScanner:
                                         if params is None else params)
         self.notes['step'] = 0
 
-    def process(self, steps=(1, 5), readnotes=False, writenotes=False,
+    def process(self, steps=(1, 6), readnotes=False, writenotes=False,
                 notesdir=None, callback=None, verbosity=0):
         """
-        Process the video. Processing occurs in five distinct steps. The
+        Process the video. Processing occurs in six distinct steps. The
         default is to do all processing steps sequentially, but processing may
         be broken up into multiple calls to this method if desired -- see the
         'steps' argument.
@@ -195,7 +196,7 @@ class HEVideoScanner:
                 _notesdir = os.path.join(dirname, notesdir)
 
         step_start, step_end = steps
-        if step_start in (2, 3, 4, 5):
+        if step_start in (2, 3, 4, 5, 6):
             if readnotes:
                 _notespath = os.path.join(_notesdir, '{}_notes{}.pkl'.format(
                                           basename_noext, step_start - 1))
@@ -213,11 +214,13 @@ class HEVideoScanner:
             elif step == 4:
                 self.EM_optimize()
             elif step == 5:
+                self.detect_juggler(display=True)
+            elif step == 6:
                 self.analyze_juggling()
             self.notes['step'] = step
 
         if writenotes:
-            if step_end in (1, 2, 3, 4):
+            if step_end in (1, 2, 3, 4, 5):
                 _notespath = os.path.join(_notesdir,
                                           '{}_notes{}.pkl'.format(
                                             basename_noext, step_end))
@@ -269,15 +272,13 @@ class HEVideoScanner:
             print(f'estimated frame count = {framecount}\n')
 
     # --------------------------------------------------------------------------
-    #  Step 2: Extract features from video
+    #  Step 2: Extract moving features from video
     # --------------------------------------------------------------------------
 
     def detect_objects(self, display=False):
         """
-        Find coordinates of thrown objects and the juggler's torso in each
-        frame of a video, and store them in the self.notes data structure.
-
-        This function is the only one in the scanner that uses OpenCV.
+        Find coordinates of moving objects in each frame of a video, and store
+        in the self.notes data structure.
 
         Args:
             display(bool, optional):
@@ -286,12 +287,10 @@ class HEVideoScanner:
             None
         """
         notes = self.notes
+        notes['meas'] = dict()
 
         if self._verbosity >= 1:
             print('Object detection starting...')
-
-        if display:
-            cv2.namedWindow('Frame')
 
         fps = notes['fps']
         framewidth = notes['frame_width']
@@ -345,8 +344,6 @@ class HEVideoScanner:
                 notes['scanner_params']['radius_window_high_res']
                 if scan_frameheight >= 480
                 else notes['scanner_params']['radius_window_low_res'])
-        notes['meas'] = dict()
-        notes['body'] = dict()
 
         fgbg = cv2.bgsegm.createBackgroundSubtractorMOG()
 
@@ -367,33 +364,11 @@ class HEVideoScanner:
                           notes['scanner_params']['max_blob_area_low_res'])
         detector = cv2.SimpleBlobDetector_create(params)
 
-        if getattr(sys, 'frozen', False):
-            # we are running in a bundle
-            base_dir = sys._MEIPASS
-        else:
-            # we are running in a normal Python environment
-            base_dir = os.path.dirname(os.path.realpath(__file__))
-        body_cascade_file = os.path.join(base_dir,
-                                         'resources/haarcascade_upperbody.xml')
-        body_cascade = cv2.CascadeClassifier(body_cascade_file)
-
         framenum = framereads = 0
         tag_count = 0
-        # timelast = time.perf_counter()
 
-        body_average = None
-        body_frames_to_average = int(round(
-                fps *
-                notes['scanner_params']['body_averaging_time_window_secs']))
-        body_frames_averaged = 0
-        frames_with_no_body = 0
-
-        def center_distance(a, b):
-            ax, ay, aw, ah = a
-            bx, by, bw, bh = b
-            dx = (ax + aw / 2) - (bx + bw / 2)
-            dy = (ay + ah / 2) - (by + bh / 2)
-            return sqrt(dx * dx + dy * dy)
+        if display:
+            cv2.namedWindow(notes['source'])
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -407,60 +382,17 @@ class HEVideoScanner:
                     break
                 continue
 
-            notes['meas'][framenum] = []
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            bodies = body_cascade.detectMultiScale(gray, 1.3, 6)
-
-            if (len(bodies) > 1 and
-                    body_frames_averaged == body_frames_to_average):
-                # find the detection that's closest to the moving average and
-                # ignore the rest
-                bodies = sorted(
-                    bodies, key=lambda i: center_distance(i, body_average))
-                bodies = bodies[:1]
-
-            for x, y, w, h in bodies:
-                frames_with_no_body = 0
-                if body_average is None:
-                    body_average = (x, y, w, h)
-                    body_frames_averaged = 1
-                else:
-                    body_frames_averaged = min(body_frames_to_average,
-                                               body_frames_averaged + 1)
-                    temp1 = (body_frames_averaged - 1) / body_frames_averaged
-                    temp2 = 1 / body_frames_averaged
-                    body_average = (body_average[0] * temp1 + x * temp2,
-                                    body_average[1] * temp1 + y * temp2,
-                                    body_average[2] * temp1 + w * temp2,
-                                    body_average[3] * temp1 + h * temp2)
-                break
-            else:
-                frames_with_no_body += 1
-
-            if (body_average is not None and
-                    frames_with_no_body < body_frames_to_average):
-                body_x, body_y = scan_to_video_coord(body_average[0],
-                                                     body_average[1])
-                body_w = body_average[2] * scan_scaledown
-                body_h = body_average[3] * scan_scaledown
-
-                notes['body'][framenum] = (body_x, body_y, body_w, body_h,
-                                           frames_with_no_body == 0)
-                if display:
-                    x = int(round(body_average[0]))
-                    y = int(round(body_average[1]))
-                    w = int(round(body_average[2]))
-                    h = int(round(body_average[3]))
-                    cv2.rectangle(frame, (x, y), (x + w, y + h),
-                                  (255, 0, 0), 2)
-
+            # run the background subtraction + blob detector to find balls
             fgmask = fgbg.apply(frame)
             keypoints = detector.detect(fgmask)
+
+            # process any ball detections
+            notes['meas'][framenum] = []
+
             for kp in keypoints:
-                # print('frame {}: ({}, {}) radius={:.1f}'.format(framenum,
-                # kp.pt[0], kp.pt[1], kp.size))
                 tag_total_weight = 1.0
 
+                """
                 if body_average is not None:
                     if kp.pt[1] > body_average[1] + body_average[3]:
                         continue    # skip point entirely
@@ -468,7 +400,7 @@ class HEVideoScanner:
                         tag_total_weight = exp(2.0 *
                                                (body_average[1] - kp.pt[1])
                                                / body_average[3])
-
+                """
                 tag_x, tag_y = scan_to_video_coord(kp.pt[0], kp.pt[1])
                 tag_size = kp.size * scan_scaledown
                 notes['meas'][framenum].append(
@@ -481,7 +413,7 @@ class HEVideoScanner:
                                int(kp.size), (0, 0, 255), 1)
 
             if display:
-                cv2.imshow('Frame', frame)
+                cv2.imshow(notes['source'], frame)
                 # cv2.imshow('FG Mask MOG 2', fgmask)
                 if cv2.waitKey(10) & 0xFF == ord('q'):  # Q on keyboard exits
                     break
@@ -1493,7 +1425,293 @@ class HEVideoScanner:
                    for arc in tag.weight)
 
     # --------------------------------------------------------------------------
-    #  Step 5: Analyze juggling patterns
+    #  Step 5: Extract juggler location from video
+    # --------------------------------------------------------------------------
+
+    def detect_juggler(self, display=False):
+        """
+        Find coordinates of the juggler's body in each frame of the video
+        containing juggling, and store in the self.notes dictionary.
+
+        Args:
+            display(bool, optional):
+                if True then show video in a window while processing
+        Returns:
+            None
+        """
+        notes = self.notes
+        notes['body'] = dict()
+
+        if self._verbosity >= 1:
+            print('Juggler detection starting...')
+
+        # Figure out which frame numbers to scan. To save time we'll only
+        # process frames that contain juggling.
+        arc_count = [0] * notes['frame_count']
+        for arc in notes['arcs']:
+            start, end = arc.get_frame_range(notes)
+            for framenum in range(start, end + 1):
+                arc_count[framenum] += 1
+        body_frames_to_scan = sum(1 for count in arc_count if count > 1)
+
+        if self._verbosity >= 2:
+            print(f'Processing {body_frames_to_scan} out of '
+                  f'{notes["frame_count"]} frames containing juggling')
+        if body_frames_to_scan == 0:
+            if self._verbosity >= 2:
+                print('Nothing to scan, exiting...')
+            if self._verbosity >= 1:
+                print('Juggler detection done\n')
+            return
+
+        fps = notes['fps']
+        framewidth = notes['frame_width']
+        frameheight = notes['frame_height']
+        framecount = notes['frame_count_estimate']
+        scanvideo = notes['scanvideo']
+
+        if scanvideo is None:
+            # no substitute scan video provided
+            if self._verbosity >= 2:
+                print('Scanning from video {}'.format(notes['source']))
+
+            cap = cv2.VideoCapture(notes['source'])
+            if not cap.isOpened():
+                raise HEScanException("Error opening video file {}".format(
+                    notes['source']))
+
+            scan_framewidth, scan_frameheight = framewidth, frameheight
+        else:
+            if self._verbosity >= 2:
+                print(f'Scanning from video {scanvideo}')
+
+            cap = cv2.VideoCapture(scanvideo)
+            if not cap.isOpened():
+                raise HEScanException(f'Error opening video file {scanvideo}')
+
+            scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        scan_scaledown = frameheight / scan_frameheight
+
+        def scan_to_video_coord(scan_x, scan_y):
+            orig_cropwidth = frameheight * (scan_framewidth / scan_frameheight)
+            orig_padleft = (framewidth - orig_cropwidth) / 2
+            orig_x = orig_padleft + scan_x * scan_scaledown
+            orig_y = scan_y * scan_scaledown
+            return orig_x, orig_y
+
+        if getattr(sys, 'frozen', False):
+            # we are running in a bundle
+            base_dir = sys._MEIPASS
+        else:
+            # we are running in a normal Python environment
+            base_dir = os.path.dirname(os.path.realpath(__file__))
+        """
+        body_cascade_file = os.path.join(base_dir,
+                                         'resources/haarcascade_upperbody.xml')
+        body_cascade = cv2.CascadeClassifier(body_cascade_file)
+        """
+
+        # initialize YOLO network
+        YOLO_classes_file = os.path.join(base_dir,
+                                         'resources/yolo-classes.txt')
+        YOLO_weights_file = os.path.join(base_dir,
+                                         'resources/yolov2-tiny.weights')
+        YOLO_config_file = os.path.join(base_dir,
+                                        'resources/yolov2-tiny.cfg')
+        classes = None
+        with open(YOLO_classes_file, 'r') as f:
+            classes = [line.strip() for line in f.readlines()]
+        net = cv2.dnn.readNet(YOLO_weights_file, YOLO_config_file)
+        # net.setPreferableTarget(cv2.dnn.DNN_TARGET_OPENCL)
+        layer_names = net.getLayerNames()
+        output_layers = [layer_names[i[0] - 1]
+                         for i in net.getUnconnectedOutLayers()]
+        conf_threshold = 0.5
+        nms_threshold = 0.4
+
+        body_average = None
+        body_frames_to_average = int(round(
+                fps *
+                notes['scanner_params']['body_averaging_time_window_secs']))
+        body_frames_averaged = 0
+        frames_with_no_body = 0
+
+        def center_distance(a, b):
+            ax, ay, aw, ah = a
+            bx, by, bw, bh = b
+            dx = (ax + aw / 2) - (bx + bw / 2)
+            dy = (ay + ah / 2) - (by + bh / 2)
+            return sqrt(dx * dx + dy * dy)
+
+        if display:
+            cv2.namedWindow(notes['source'])
+
+            def draw_YOLO_prediction(img, class_id, color,
+                                     x, y, x_plus_w, y_plus_h):
+                label = str(classes[class_id])
+                cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
+                cv2.putText(img, label, (x-10, y-10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, color, 2)
+
+        framenum = framereads = 0
+        body_frames_scanned = 0
+        frames_with_detections = 0
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            framereads += 1
+
+            if not ret:
+                if self._verbosity >= 2:
+                    print('VideoCapture.read() returned False '
+                          'on frame read {}'.format(framereads))
+                if framereads > framecount:
+                    break
+                continue
+
+            if arc_count[framenum] > 0:
+                """
+                # run the Haar detector to find torso
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                bodies = body_cascade.detectMultiScale(gray, 1.3, 6)
+                """
+
+                # run the YOLO network to identify objects
+                width = frame.shape[1]
+                height = frame.shape[0]
+                scale = 0.00392
+
+                blob = cv2.dnn.blobFromImage(frame, scale, (416, 416),
+                                             (0, 0, 0), True, crop=False)
+                net.setInput(blob)
+                outs = net.forward(output_layers)
+
+                class_ids = []
+                confidences = []
+                boxes = []
+
+                for out in outs:
+                    for detection in out:
+                        scores = detection[5:]
+                        class_id = np.argmax(scores)
+                        confidence = scores[class_id]
+                        if confidence > 0.5:
+                            center_x = int(detection[0] * width)
+                            center_y = int(detection[1] * height)
+                            w = int(detection[2] * width)
+                            h = int(detection[3] * height)
+                            x = center_x - w / 2
+                            y = center_y - h / 2
+                            class_ids.append(class_id)
+                            confidences.append(float(confidence))
+                            boxes.append([x, y, w, h])
+
+                indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold,
+                                           nms_threshold)
+
+                best_person = None
+                for idx in indices:
+                    i = idx[0]
+                    if str(classes[class_ids[i]]) != 'person':
+                        continue
+
+                    box = boxes[i]
+                    x = box[0]
+                    y = box[1]
+                    w = box[2]
+                    h = box[3]
+                    confidence = confidences[i]
+                    # decide which box to keep here
+                    best_person = i
+
+                if best_person is not None:
+                    frames_with_detections += 1
+
+                if display:
+                    for idx in indices:
+                        i = idx[0]
+                        box = boxes[i]
+                        x = box[0]
+                        y = box[1]
+                        w = box[2]
+                        h = box[3]
+                        class_id = class_ids[i]
+                        color = ((0, 255, 255)
+                                 if str(classes[class_id]) == 'person'
+                                 else (255, 0, 0))
+                        draw_YOLO_prediction(frame, class_id, color,
+                                             round(x), round(y),
+                                             round(x+w), round(y+h))
+
+                    cv2.imshow(notes['source'], frame)
+                    if cv2.waitKey(10) & 0xFF == ord('q'):  # Q exits
+                        break
+
+                """
+                # process any torso detections
+                if (len(bodies) > 1 and
+                        body_frames_averaged == body_frames_to_average):
+                    # find the detection that's closest to the moving average and
+                    # ignore the rest
+                    bodies = sorted(
+                        bodies, key=lambda i: center_distance(i, body_average))
+                    bodies = bodies[:1]
+
+                for x, y, w, h in bodies:
+                    frames_with_no_body = 0
+                    if body_average is None:
+                        body_average = (x, y, w, h)
+                        body_frames_averaged = 1
+                    else:
+                        body_frames_averaged = min(body_frames_to_average,
+                                                   body_frames_averaged + 1)
+                        temp1 = (body_frames_averaged - 1) / body_frames_averaged
+                        temp2 = 1 / body_frames_averaged
+                        body_average = (body_average[0] * temp1 + x * temp2,
+                                        body_average[1] * temp1 + y * temp2,
+                                        body_average[2] * temp1 + w * temp2,
+                                        body_average[3] * temp1 + h * temp2)
+                    break
+                else:
+                    frames_with_no_body += 1
+
+                if (body_average is not None and
+                        frames_with_no_body < body_frames_to_average):
+                    body_x, body_y = scan_to_video_coord(body_average[0],
+                                                         body_average[1])
+                    body_w = body_average[2] * scan_scaledown
+                    body_h = body_average[3] * scan_scaledown
+
+                    notes['body'][framenum] = (body_x, body_y, body_w, body_h,
+                                               frames_with_no_body == 0)
+                    if display:
+                        x = int(round(body_average[0]))
+                        y = int(round(body_average[1]))
+                        w = int(round(body_average[2]))
+                        h = int(round(body_average[3]))
+                        cv2.rectangle(frame, (x, y), (x + w, y + h),
+                                      (255, 0, 0), 2)
+                """
+                body_frames_scanned += 1
+
+            framenum += 1
+
+            if self._callback is not None:
+                self._callback(body_frames_scanned, body_frames_to_scan)
+
+        cap.release()
+        if display:
+            cv2.destroyAllWindows()
+
+        if self._verbosity >= 1:
+            print(f'Juggler detection done: Found juggler in '
+                  f'{frames_with_detections} out of '
+                  f'{body_frames_to_scan} frames\n')
+
+    # --------------------------------------------------------------------------
+    #  Step 6: Analyze juggling patterns
     # --------------------------------------------------------------------------
 
     def analyze_juggling(self):
@@ -2279,7 +2497,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
         if 'arcs' in notes:
             arcs = notes['arcs']
 
-    cv2.namedWindow(filename, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(filename)
     font = cv2.FONT_HERSHEY_SIMPLEX
     framenum = framereads = 0
     show_arc_id = False
@@ -2314,11 +2532,12 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                                int(round(tag.radius)), color, 1)
 
             for arc in arcs:
-                if notes['step'] < 5:
+                if notes['step'] < 6:
                     start, end = arc.get_frame_range(notes)
-                    print('start = {}, end = {}'.format(start, end))
+                    # print('start = {}, end = {}'.format(start, end))
                 else:
                     start, end = arc.f_throw, arc.f_catch
+
                 if start <= framenum <= end:
                     x, y = arc.get_position(framenum, notes)
                     x = int(x + 0.5)
@@ -2338,7 +2557,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
                     cv2.circle(frame, (x, y), 2, color, -1)
 
                     if show_arc_id:
-                        arc_id = (arc.id_ if notes['step'] < 4
+                        arc_id = (arc.id_ if notes['step'] < 6
                                   else arc.throw_id)
                         cv2.rectangle(frame, (x+10, y+5),
                                       (x+40, y-4), (0, 0, 0), -1)
@@ -2402,16 +2621,16 @@ if __name__ == '__main__':
 
     if watch_video:
         notes_step = 4
-        start_frame = 0
+        start_frame = 730
 
-        if 1 <= notes_step <= 5:
+        if 1 <= notes_step <= 6:
             _filepath = os.path.abspath(_filename)
             _dirname = os.path.dirname(_filepath)
             _hawkeye_dir = os.path.join(_dirname, '__Hawkeye__')
             _basename = os.path.basename(_filepath)
             _basename_noext = os.path.splitext(_basename)[0]
 
-            if notes_step == 5:
+            if notes_step == 6:
                 _basename_notes = _basename_noext + '_notes.pkl'
             else:
                 _basename_notes = _basename_noext + '_notes{}.pkl'.format(
@@ -2421,6 +2640,9 @@ if __name__ == '__main__':
             mynotes = HEVideoScanner.read_notes(_filepath_notes)
         else:
             mynotes = None
+
+        print('Press Q to quit, I to toggle arc labels, '
+              'any other key to advance a frame')
         play_video(_filename, notes=mynotes, outfilename=None,
                    startframe=start_frame, keywait=True)
     else:
