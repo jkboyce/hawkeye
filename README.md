@@ -14,7 +14,7 @@ _(Note: If launching the app gives an "identity of the developer cannot be confi
 app and select Open, then select Open in the dialog box. After it launches successfully the warning message won't
 appear again.)_
 
-[Hawkeye-1.0.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.0.exe) -- Windows installer. _(Note: If you get
+[Hawkeye-1.1.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.1.exe) -- Windows installer. _(Note: If you get
 playback errors in the Hawkeye video player, it is likely you need to install video codecs on your computer. I
 recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_k-lite_codec_pack_standard.htm).)_
 
@@ -49,9 +49,10 @@ refine the parabolas (M step). We merge and prune out bad arcs as we go. This is
 algorithm (reference below) but we get higher reliability than their published numbers by doing more preprocessing
 before applying the EM algorithm, and by being careful with the merging and pruning steps.
 
-A potential area to investigate is to train a neural network to track thrown objects, using the present algorithm
-to help generate training data. Such a network might operate in close to real time which could enable some
-interesting applications.
+We also track the location of the juggler's body while juggling. We tried several approaches including a Haar cascade,
+and ultimately the most robust option with reasonable performance has been the [YOLOv2 network](https://pjreddie.com/darknet/yolov2/), in particular YOLOv2-tiny. (We benchmarked YOLOv3-tiny as well but in our
+test cases its bounding boxes were less consistent.) The YOLO network runs in forward (inference) mode directly in
+OpenCV's DNN module.
 
 ### References
 - Leal-Taixé, L. et al, "Tracking the Trackers: An Analysis of the State of the Art in Multiple Object Tracking", [arXiv:1704.02781](https://arxiv.org/abs/1704.02781), 2017.
