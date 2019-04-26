@@ -157,7 +157,7 @@ class HEWorker(QObject):
         if need_notes and not self.abort():
             if self.make_scan_video(fileinfo) != 0:
                 return
-            if self.run_scanner(fileinfo, scanner, steps=(2, 5),
+            if self.run_scanner(fileinfo, scanner, steps=(2, 6),
                                 writenotes=True) != 0:
                 return
 

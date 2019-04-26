@@ -14,7 +14,7 @@ class Balltag:
     """
     def __init__(self, frame, x, y, radius, total_weight=1.0):
         self.frame = frame      # frame number in movie
-        self.x = x              # pixel coordinates
+        self.x = x              # screen coordinates, pixel units
         self.y = y              # OpenCV convention: y=0 at top of screen
         self.radius = radius    # radius in pixel units
         self.total_weight = total_weight
@@ -39,7 +39,9 @@ class Ballarc:
         self.tags = set()       # set of attached Balltags
         self.id_ = None         # unique sequentially-assigned identifier
 
-        # assigned in processing step 5:
+        # assigned in processing step 6:
+        self.x_origin = None    # juggler coordinates, pixel units
+        self.y_origin = None    # presumed elevation of catch and throw
         self.next = None
         self.prev = None
         self.hand_throw = None  # string, 'right' or 'left'

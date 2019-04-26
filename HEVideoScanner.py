@@ -1425,7 +1425,7 @@ class HEVideoScanner:
                    for arc in tag.weight)
 
     # --------------------------------------------------------------------------
-    #  Step 5: Extract juggler location from video
+    #  Step 5: Find juggler location in video
     # --------------------------------------------------------------------------
 
     def detect_juggler(self, display=False):
@@ -1448,11 +1448,17 @@ class HEVideoScanner:
         # Figure out which frame numbers to scan. To save time we'll only
         # process frames that contain juggling.
         arc_count = [0] * notes['frame_count']
+        arc_xaverage = [0] * notes['frame_count']
         for arc in notes['arcs']:
             start, end = arc.get_frame_range(notes)
             for framenum in range(start, end + 1):
+                x, _ = arc.get_position(framenum, notes)
+                arc_xaverage[framenum] += x
                 arc_count[framenum] += 1
-        body_frames_to_scan = sum(1 for count in arc_count if count > 1)
+        for framenum in range(notes['frame_count']):
+            if arc_count[framenum] > 0:
+                arc_xaverage[framenum] /= arc_count[framenum]
+        body_frames_to_scan = sum(1 for count in arc_count if count > 0)
 
         if self._verbosity >= 2:
             print(f'Processing {body_frames_to_scan} out of '
@@ -1531,13 +1537,6 @@ class HEVideoScanner:
         conf_threshold = 0.5
         nms_threshold = 0.4
 
-        body_average = None
-        body_frames_to_average = int(round(
-                fps *
-                notes['scanner_params']['body_averaging_time_window_secs']))
-        body_frames_averaged = 0
-        frames_with_no_body = 0
-
         def center_distance(a, b):
             ax, ay, aw, ah = a
             bx, by, bw, bh = b
@@ -1548,9 +1547,9 @@ class HEVideoScanner:
         if display:
             cv2.namedWindow(notes['source'])
 
-            def draw_YOLO_prediction(img, class_id, color,
-                                     x, y, x_plus_w, y_plus_h):
-                label = str(classes[class_id])
+            def draw_YOLO_detection(img, class_id, color,
+                                    x, y, x_plus_w, y_plus_h, confidence):
+                label = f'{str(classes[class_id])} {confidence:.2f}'
                 cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
                 cv2.putText(img, label, (x-10, y-10), cv2.FONT_HERSHEY_SIMPLEX,
                             0.5, color, 2)
@@ -1558,6 +1557,13 @@ class HEVideoScanner:
         framenum = framereads = 0
         body_frames_scanned = 0
         frames_with_detections = 0
+
+        body_average = None
+        body_frames_to_average = int(round(
+                fps *
+                notes['scanner_params']['body_averaging_time_window_secs']))
+        body_frames_averaged = 0
+        frames_with_no_body = 0
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -1581,7 +1587,7 @@ class HEVideoScanner:
                 # run the YOLO network to identify objects
                 width = frame.shape[1]
                 height = frame.shape[0]
-                scale = 0.00392
+                scale = 0.00392     # scale RGB from 0-255 to 0.0-1.0
 
                 blob = cv2.dnn.blobFromImage(frame, scale, (416, 416),
                                              (0, 0, 0), True, crop=False)
@@ -1592,12 +1598,14 @@ class HEVideoScanner:
                 confidences = []
                 boxes = []
 
-                for out in outs:
+                for out in outs:        # only one output layer for YOLO
                     for detection in out:
+                        # First four elements of `detection` define a bounding
+                        # box, the rest is a vector of class probabilities.
                         scores = detection[5:]
                         class_id = np.argmax(scores)
                         confidence = scores[class_id]
-                        if confidence > 0.5:
+                        if confidence > conf_threshold:
                             center_x = int(detection[0] * width)
                             center_y = int(detection[1] * height)
                             w = int(detection[2] * width)
@@ -1608,58 +1616,61 @@ class HEVideoScanner:
                             confidences.append(float(confidence))
                             boxes.append([x, y, w, h])
 
-                indices = cv2.dnn.NMSBoxes(boxes, confidences, conf_threshold,
-                                           nms_threshold)
+                # Do non-maximum suppression on boxes we detected. This in
+                # effect de-duplicates the detection events and produces a
+                # single bounding box for each.
+                kept_indices = cv2.dnn.NMSBoxes(boxes, confidences,
+                                                conf_threshold, nms_threshold)
+
+                """
+                Now we want to find the person detected in the YOLO results.
+                If more than one person is detected, choose the best one using
+                this rule:
+
+                - If a detection was made within the last few frames, choose
+                  the detection event closest to it,
+                - Otherwise choose the detection event closest to the
+                  centerline of juggling.
+                """
+
+                # for some reason NMSBoxes wraps each index into a
+                # single-element list:
+                person_indices = [elem[0] for elem in kept_indices
+                                  if str(classes[class_ids[elem[0]]])
+                                  == 'person']
 
                 best_person = None
-                for idx in indices:
-                    i = idx[0]
-                    if str(classes[class_ids[i]]) != 'person':
-                        continue
-
-                    box = boxes[i]
-                    x = box[0]
-                    y = box[1]
-                    w = box[2]
-                    h = box[3]
-                    confidence = confidences[i]
-                    # decide which box to keep here
-                    best_person = i
-
-                if best_person is not None:
-                    frames_with_detections += 1
-
-                if display:
-                    for idx in indices:
-                        i = idx[0]
-                        box = boxes[i]
-                        x = box[0]
-                        y = box[1]
-                        w = box[2]
-                        h = box[3]
-                        class_id = class_ids[i]
-                        color = ((0, 255, 255)
-                                 if str(classes[class_id]) == 'person'
-                                 else (255, 0, 0))
-                        draw_YOLO_prediction(frame, class_id, color,
-                                             round(x), round(y),
-                                             round(x+w), round(y+h))
-
-                    cv2.imshow(notes['source'], frame)
-                    if cv2.waitKey(10) & 0xFF == ord('q'):  # Q exits
-                        break
+                for index in person_indices:
+                    x, y, w, h = boxes[index]
+                    confidence = confidences[index]
+                    best_person = index         # fill this in
 
                 """
                 # process any torso detections
                 if (len(bodies) > 1 and
                         body_frames_averaged == body_frames_to_average):
-                    # find the detection that's closest to the moving average and
-                    # ignore the rest
+                    # find the detection that's closest to the moving average
+                    # and ignore the rest
                     bodies = sorted(
                         bodies, key=lambda i: center_distance(i, body_average))
                     bodies = bodies[:1]
+                """
 
-                for x, y, w, h in bodies:
+                if display:
+                    for elem in kept_indices:
+                        index = elem[0]
+                        class_id = class_ids[index]
+                        color = ((0, 255, 255) if index == best_person
+                                 else (0, 255, 0))
+                        x, y, w, h = boxes[index]
+                        confidence = confidences[index]
+                        draw_YOLO_detection(frame, class_id, color,
+                                            round(x), round(y),
+                                            round(x+w), round(y+h),
+                                            confidence)
+
+                if best_person is not None:
+                    x, y, w, h = boxes[best_person]
                     frames_with_no_body = 0
                     if body_average is None:
                         body_average = (x, y, w, h)
@@ -1667,13 +1678,12 @@ class HEVideoScanner:
                     else:
                         body_frames_averaged = min(body_frames_to_average,
                                                    body_frames_averaged + 1)
-                        temp1 = (body_frames_averaged - 1) / body_frames_averaged
                         temp2 = 1 / body_frames_averaged
+                        temp1 = 1.0 - temp2
                         body_average = (body_average[0] * temp1 + x * temp2,
                                         body_average[1] * temp1 + y * temp2,
                                         body_average[2] * temp1 + w * temp2,
                                         body_average[3] * temp1 + h * temp2)
-                    break
                 else:
                     frames_with_no_body += 1
 
@@ -1693,8 +1703,24 @@ class HEVideoScanner:
                         h = int(round(body_average[3]))
                         cv2.rectangle(frame, (x, y), (x + w, y + h),
                                       (255, 0, 0), 2)
-                """
+
                 body_frames_scanned += 1
+
+                if best_person is not None:
+                    frames_with_detections += 1
+
+                if display:
+                    cv2.imshow(notes['source'], frame)
+                    if cv2.waitKey(10) & 0xFF == ord('q'):  # Q exits
+                        break
+
+                """
+                print(f'scanned {body_frames_scanned}, '
+                      f'detected in {frames_with_detections}, '
+                      f'total {body_frames_to_scan}')
+                """
+            else:
+                body_average = None
 
             framenum += 1
 
@@ -1717,7 +1743,7 @@ class HEVideoScanner:
     def analyze_juggling(self):
         """
         Build out a higher-level description of the juggling using the
-        individual throw arcs we found in steps 1-4.
+        individual throw arcs we found in steps 1-5.
 
         Args:
             None
@@ -1728,7 +1754,8 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Juggling analyzer starting...')
 
-        self.add_missing_torso_measurements()
+        self.add_missing_body_measurements()
+        self.set_hand_origins()
         self.compile_arc_data()
         runs = self.find_runs()
 
@@ -1787,14 +1814,14 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
-    def add_missing_torso_measurements(self):
+    def add_missing_body_measurements(self):
         """
-        Because the Haar cascade detector is not perfect, the juggler torso
-        is often not detected on every frame. Fill in missing measurements
-        with an estimate.
+        Because the YOLO detector is not perfect, the juggler may not be
+        detected on every frame. Fill in missing measurements with an estimate.
         """
         notes = self.notes
         last_torso = None
+        add_count = 0
 
         for framenum in range(0, notes['frame_count']):
             if framenum in notes['body']:
@@ -1829,7 +1856,141 @@ class HEVideoScanner:
                         x, y = 0.5 * (x_min + x_max - w), y_max - h
 
                     notes['body'][framenum] = (x, y, w, h, False)
+                    add_count += 1
                     # print(f'added torso to frame {framenum}')
+
+        if self._verbosity >= 2:
+            print(f'Added missing body measurements to {add_count} frames')
+
+    def set_hand_origins(self):
+        """
+        The scanner doesn't detect the juggler's hands, so we have to infer
+        a throwing and catching elevation using some heuristics. For each arc
+        determine an origin, located on the centerline and at the inferred
+        elevation.
+        """
+        notes = self.notes
+        arcs = notes['arcs']
+
+        c = cos(notes['camera_tilt'])
+        s = sin(notes['camera_tilt'])
+
+        arcs_to_kill = []
+        tags_killed = 0
+        arcs_killed = 0
+
+        for arc in arcs:
+            x, y, w, _, _ = notes['body'][round(arc.f_peak)]
+
+            # Assume a hand position 1 meter below the top of the head
+            x_origin_screen = x + 0.5 * w
+            y_origin_screen = y + 100.0 / notes['cm_per_pixel']
+
+            # in juggler coordinates:
+            arc.x_origin = x_origin_screen * c - y_origin_screen * s
+            arc.y_origin = x_origin_screen * s + y_origin_screen * c
+
+            # delete any tags attached to the arc that are below hand height
+            tags_to_kill = []
+            for tag in arc.tags:
+                tag_y = tag.x * s + tag.y * c
+                if tag_y > arc.y_origin:
+                    tags_to_kill.append(tag)
+
+            for tag in tags_to_kill:
+                arc.tags.remove(tag)
+                notes['meas'][tag.frame].remove(tag)
+                tags_killed += 1
+
+            # check if the arc is still viable
+            if len(tags_to_kill) > 0:
+                if self.eval_arc(arc, requirepeak=True) > 0:
+                    arcs_to_kill.append(arc)
+
+        for arc in arcs_to_kill:
+            arcs_killed += 1
+
+        """
+        if self._verbosity >= 2:
+            print('cleaning notes...')
+
+        for frame in notes['meas']:
+            for tag in notes['meas'][frame]:
+                tag.done = False
+        for arc in notes['arcs']:
+            arc.done = False
+
+        tags_removed = tags_remaining = arcs_removed = 0
+        keep_cleaning = True
+
+        while keep_cleaning:
+            for frame in notes['meas']:
+                tags_to_kill = []
+
+                for tag in notes['meas'][frame]:
+                    if tag.done:
+                        continue
+                    if not self.is_tag_good(tag):
+                        tags_to_kill.append(tag)
+                        continue
+                    tag.done = True
+
+                for tag in tags_to_kill:
+                    notes['meas'][frame].remove(tag)
+                    for arc in tag.weight:
+                        arc.tags.remove(tag)
+                        arc.done = False
+                    tags_removed += 1
+
+            if self._callback is not None:
+                self._callback()
+
+            arcs_to_kill = []
+            keep_cleaning = False
+
+            for arc in notes['arcs']:
+                if arc.done:
+                    continue
+                if self.eval_arc(arc, requirepeak=True) > 0:
+                    arcs_to_kill.append(arc)
+                    continue
+                arc.done = True
+
+            for arc in arcs_to_kill:
+                notes['arcs'].remove(arc)
+                for tag in arc.tags:
+                    try:
+                        del tag.weight[arc]
+                    except (AttributeError, TypeError, KeyError):
+                        pass
+                    tag.done = False
+                keep_cleaning = True
+                arcs_removed += 1
+                if self._verbosity >= 2:
+                    f_min, _ = arc.get_frame_range(notes)
+                    print('  removed arc {} starting at frame {}'.format(
+                            arc.id_, f_min))
+
+        # Final cleanup: Delete unneeded data and make final assignments of
+        # tags to arcs.
+        for arc in notes['arcs']:
+            del arc.done
+            arc.tags = set()
+        for frame in notes['meas']:
+            for tag in notes['meas'][frame]:
+                temp = [(arc, arc.get_distance_from_tag(tag, notes))
+                        for arc in tag.weight]
+                final_arc, _ = min(temp, key=lambda x: x[1])
+                tag.arc = final_arc
+                final_arc.tags.add(tag)
+                del tag.weight
+                del tag.done
+                tags_remaining += 1
+
+        if self._verbosity >= 2:
+            print(f'cleaning done: {tags_removed} detections removed, '
+                  f'{tags_remaining} remaining, {arcs_removed} arcs removed')
+        """
 
     def compile_arc_data(self):
         """
@@ -2646,8 +2807,8 @@ if __name__ == '__main__':
         play_video(_filename, notes=mynotes, outfilename=None,
                    startframe=start_frame, keywait=True)
     else:
-        startstep = 5
-        endstep = 5
+        startstep = 6
+        endstep = 6
         verbosity = 2
 
         scanner = HEVideoScanner(_filename, scanvideo=_scanvideo)
