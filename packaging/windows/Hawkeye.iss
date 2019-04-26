@@ -3,7 +3,7 @@
 ;This file will be executed next to the application bundle image
 
 #define MyAppName "Hawkeye"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppYear "2019"
 #define MyAppExeName "Hawkeye.exe"
 #define MyAppIconsName "Hawkeye.ico"

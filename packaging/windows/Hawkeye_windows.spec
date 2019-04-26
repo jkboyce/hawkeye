@@ -45,7 +45,7 @@ exe = EXE(pyz,
           console=False )
 
 # Files that Pyinstaller's dependency checker pulls in but aren't needed, so
-# remove them from the build. These total 470 MB.
+# remove them from the build.
 
 Hawkeye_excludes = [
                 'mfc140u.dll',
@@ -78,14 +78,7 @@ Hawkeye_excludes = [
                 'mkl_vml_mc.dll',
                 'mkl_vml_mc2.dll',
                 'mkl_vml_mc3.dll',
-                'MSVCP140.dll',
-                'opencv_datasets341.dll',
-                'opencv_dnn_objdetect341.dll',
-                'opencv_dpm341.dll',
-                'opencv_stereo341.dll',
-                'opencv_superres341.dll',
-                'opencv_videostab341.dll',
-                'opencv_xobjdetect341.dll'
+                'MSVCP140.dll'
               ]
 a.binaries = a.binaries - TOC([(x, None, None) for x in Hawkeye_excludes])
 
