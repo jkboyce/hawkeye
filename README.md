@@ -61,3 +61,4 @@ OpenCV's DNN module.
 November 1996.
 - Ribnick, E. et al, "Detection of Thrown Objects in Indoor and Outdoor Scenes", Proceedings of the 2007 IEEE/RSJ
 International Conference on Intelligent Robots and Systems, IROS 2007.
+- Redmon, J. and Farhadi, A., "YOLO9000: Better, Faster, Stronger", [arXiv:1612.08242](https://arxiv.org/abs/1612.08242), 2016.
