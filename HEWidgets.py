@@ -229,7 +229,8 @@ class HEVideoView(QGraphicsView):
                 arc_cx_px, arc_cy_px = arc.get_position(arc.f_catch, notes)
                 arc_px_px, arc_py_px = arc.get_position(arc.f_peak, notes)
 
-                arc_origin_x_px, arc_origin_y_px = notes['origin'][round(arc.f_peak)]
+                arc_origin_x_px, arc_origin_y_px = \
+                        notes['origin'][round(arc.f_peak)]
 
                 if arc.hand_throw == 'right':
                     peaks_x = peaks_right_x
@@ -287,14 +288,14 @@ class HEVideoView(QGraphicsView):
             if len(throws_right_x) > 1:
                 center_x = mean(throws_right_x)
                 dx = stdev(throws_right_x)
-                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                painter.drawRect(round(center_x - dx), round(origin_y + dy),
                                  round(2.0 * dx), round(2.0 * dy))
 
             if len(catches_right_x) > 1:
                 center_x = mean(catches_right_x)
                 dx = stdev(catches_right_x)
                 painter.drawRect(round(center_x - dx),
-                                 round(origin_y - 4.0 * dy),
+                                 round(origin_y - 2.0 * dy),
                                  round(2.0 * dx), round(2.0 * dy))
 
             # draw same items for left hand
@@ -316,14 +317,14 @@ class HEVideoView(QGraphicsView):
             if len(throws_left_x) > 1:
                 center_x = mean(throws_left_x)
                 dx = stdev(throws_left_x)
-                painter.drawRect(round(center_x - dx), round(origin_y - dy),
+                painter.drawRect(round(center_x - dx), round(origin_y + dy),
                                  round(2.0 * dx), round(2.0 * dy))
 
             if len(catches_left_x) > 1:
                 center_x = mean(catches_left_x)
                 dx = stdev(catches_left_x)
                 painter.drawRect(round(center_x - dx),
-                                 round(origin_y - 4.0 * dy),
+                                 round(origin_y - 2.0 * dy),
                                  round(2.0 * dx), round(2.0 * dy))
 
         if prefs['ideal_points'] and run_id is not None:
@@ -357,8 +358,8 @@ class HEVideoView(QGraphicsView):
             pen = QPen(Qt.red if on_start_of_right_throw else Qt.yellow)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
-            painter.drawLine(round(tx), round(ty - 2.0 * dy),
-                             round(tx), round(ty + 2.0 * dy))
+            painter.drawLine(round(tx), round(ty),
+                             round(tx), round(ty + 4.0 * dy))
 
             cx_px = origin_x_px - catch_offset_px
             cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
@@ -366,8 +367,8 @@ class HEVideoView(QGraphicsView):
             pen.setColor(Qt.red if on_start_of_right_catch else Qt.yellow)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
-            painter.drawLine(round(cx), round(cy - 5.0 * dy),
-                             round(cx), round(cy - dy))
+            painter.drawLine(round(cx), round(cy - 3.0 * dy),
+                             round(cx), round(cy + dy))
 
             # draw ideal throw and catch points for left hand
             tx_px = origin_x_px + throw_offset_px
@@ -376,8 +377,8 @@ class HEVideoView(QGraphicsView):
             pen.setColor(Qt.red if on_start_of_left_throw else Qt.green)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
-            painter.drawLine(round(tx), round(ty - 2.0 * dy),
-                             round(tx), round(ty + 2.0 * dy))
+            painter.drawLine(round(tx), round(ty),
+                             round(tx), round(ty + 4.0 * dy))
 
             cx_px = origin_x_px + catch_offset_px
             cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
@@ -385,15 +386,15 @@ class HEVideoView(QGraphicsView):
             pen.setColor(Qt.red if on_start_of_left_catch else Qt.green)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
-            painter.drawLine(round(cx), round(cy - 5.0 * dy),
-                             round(cx), round(cy - dy))
+            painter.drawLine(round(cx), round(cy - 3.0 * dy),
+                             round(cx), round(cy + dy))
 
             # draw centerline marker, if not showing torso box
             if not prefs['body']:
                 painter.setPen(QPen(Qt.blue, 2))
                 painter.setOpacity(1.0)
-                painter.drawLine(round(origin_x), round(origin_y - 2.0 * dy),
-                                 round(origin_x), round(origin_y + 2.0 * dy))
+                painter.drawLine(round(origin_x), round(origin_y),
+                                 round(origin_x), round(origin_y + 4.0 * dy))
 
         points_per_parabola = 20
 

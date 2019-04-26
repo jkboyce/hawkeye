@@ -58,7 +58,7 @@ class Ballarc:
 
     def get_position(self, frame, notes):
         """
-        Returns the position of the arc (in pixel coordinates) at a given
+        Returns the position of the arc (in screen coordinates) at a given
         frame number in the video.
         """
         frame -= self.f_peak

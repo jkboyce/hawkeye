@@ -412,7 +412,7 @@ class HEMainWindow(QMainWindow):
                'distributed as part of Hawkeye is done so under the terms of '
                'their respective non-commercial licenses: '
                'OpenCV version 3.4.4 (3-clause BSD License), '
-               'YOLO-tiny version 3 (MIT License), '
+               'YOLOv2-tiny (MIT License), '
                'Qt version 5.6.2 (LGPL v2.1), '
                'PySide2 version 5.6.0 (LGPL v2.1), '
                'FFmpeg version 3.4.2 (LGPL v2.1).</small></p>'

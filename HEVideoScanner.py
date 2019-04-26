@@ -71,8 +71,8 @@ class HEVideoScanner:
         whether the bounding box was a direct detection (True) or was inferred
         (False) (tuple)
     notes['origin'][framenum]:
-        tuple (origin_x, origin_y) of body origin in juggler's coordinates
-        and pixel units.
+        tuple (origin_x, origin_y) of body origin in screen coordinates and
+        pixel units.
     notes['arcs']:
         list of Ballarc objects detected in video (list)
     notes['g_px_per_frame_sq']:
@@ -111,7 +111,7 @@ class HEVideoScanner:
         ideal catch location from centerline (float)
     """
 
-    CURRENT_NOTES_VERSION = 3
+    CURRENT_NOTES_VERSION = 4
 
     def __init__(self, filename, scanvideo=None, params=None):
         """
@@ -217,7 +217,7 @@ class HEVideoScanner:
             elif step == 4:
                 self.EM_optimize()
             elif step == 5:
-                self.detect_juggler(display=True)
+                self.detect_juggler(display=False)
             elif step == 6:
                 self.analyze_juggling()
             self.notes['step'] = step
@@ -702,8 +702,7 @@ class HEVideoScanner:
         """
         notes = self.notes
 
-        c = cos(notes['camera_tilt'])
-        s = sin(notes['camera_tilt'])
+        s, c = sin(notes['camera_tilt']), cos(notes['camera_tilt'])
 
         for arc in arcs:
             if len(arc.tags) < 3:
@@ -1039,13 +1038,12 @@ class HEVideoScanner:
         x- and y-components of gravity. Estimate acceleration in each direction
         with a least-squares fit.
 
-        Based on our sign conventions, a positive camera tilt angle
-        corresponds to an apparent counterclockwise rotation of the juggler in
-        the video. We transform from juggler coordinates to pixel (camera)
-        coordinates with:
+        Our sign convention is that a positive camera tilt angle corresponds to
+        an apparent counterclockwise rotation of the juggler in the video. We
+        transform from juggler coordinates to screen coordinates with:
 
-                x_pixels =  x_juggler * cos(t) + y_juggler * sin(t)
-                y_pixels = -x_juggler * sin(t) + y_juggler * cos(t)
+                x_screen =  x_juggler * cos(t) + y_juggler * sin(t)
+                y_screen = -x_juggler * sin(t) + y_juggler * cos(t)
 
         Args:
             arcs(list of Ballarc):
@@ -1483,10 +1481,6 @@ class HEVideoScanner:
         scanvideo = notes['scanvideo']
 
         if scanvideo is None:
-            # no substitute scan video provided
-            if self._verbosity >= 2:
-                print('Scanning from video {}'.format(notes['source']))
-
             cap = cv2.VideoCapture(notes['source'])
             if not cap.isOpened():
                 raise HEScanException("Error opening video file {}".format(
@@ -1494,9 +1488,6 @@ class HEVideoScanner:
 
             scan_framewidth, scan_frameheight = framewidth, frameheight
         else:
-            if self._verbosity >= 2:
-                print(f'Scanning from video {scanvideo}')
-
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
                 raise HEScanException(f'Error opening video file {scanvideo}')
@@ -1519,11 +1510,6 @@ class HEVideoScanner:
         else:
             # we are running in a normal Python environment
             base_dir = os.path.dirname(os.path.realpath(__file__))
-        """
-        body_cascade_file = os.path.join(base_dir,
-                                         'resources/haarcascade_upperbody.xml')
-        body_cascade = cv2.CascadeClassifier(body_cascade_file)
-        """
 
         # initialize YOLO network
         YOLO_classes_file = os.path.join(base_dir,
@@ -1581,17 +1567,11 @@ class HEVideoScanner:
                 continue
 
             if arc_count[framenum] > 0:
-                """
-                # run the Haar detector to find torso
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                bodies = body_cascade.detectMultiScale(gray, 1.3, 6)
-                """
-
-                # run the YOLO network to identify objects
                 width = frame.shape[1]
                 height = frame.shape[0]
                 scale = 0.00392     # scale RGB from 0-255 to 0.0-1.0
 
+                # run the YOLO network to identify objects
                 blob = cv2.dnn.blobFromImage(frame, scale, (416, 416),
                                              (0, 0, 0), True, crop=False)
                 net.setInput(blob)
@@ -1601,10 +1581,11 @@ class HEVideoScanner:
                 confidences = []
                 boxes = []
 
-                for out in outs:        # only one output layer for YOLO
+                # Process network outputs. The first four elements of
+                # `detection` define a bounding box, the rest is a vector of
+                # class probabilities.
+                for out in outs:
                     for detection in out:
-                        # First four elements of `detection` define a bounding
-                        # box, the rest is a vector of class probabilities.
                         scores = detection[5:]
                         class_id = np.argmax(scores)
                         confidence = scores[class_id]
@@ -1625,39 +1606,26 @@ class HEVideoScanner:
                 kept_indices = cv2.dnn.NMSBoxes(boxes, confidences,
                                                 conf_threshold, nms_threshold)
 
-                """
-                Now we want to find the person detected in the YOLO results.
-                If more than one person is detected, choose the best one using
-                this rule:
-
-                - If a detection was made within the last few frames, choose
-                  the detection event closest to it,
-                - Otherwise choose the detection event closest to the
-                  centerline of juggling.
-                """
-
-                # for some reason NMSBoxes wraps each index into a
-                # single-element list:
+                # Pick out the people detections. For some reason NMSBoxes
+                # wraps each index into a single-element list.
                 person_indices = [elem[0] for elem in kept_indices
                                   if str(classes[class_ids[elem[0]]])
                                   == 'person']
 
                 best_person = None
-                for index in person_indices:
-                    x, y, w, h = boxes[index]
-                    confidence = confidences[index]
-                    best_person = index         # fill this in
-
-                """
-                # process any torso detections
-                if (len(bodies) > 1 and
-                        body_frames_averaged == body_frames_to_average):
-                    # find the detection that's closest to the moving average
-                    # and ignore the rest
-                    bodies = sorted(
-                        bodies, key=lambda i: center_distance(i, body_average))
-                    bodies = bodies[:1]
-                """
+                if len(person_indices) == 1:
+                    best_person = person_indices[0]
+                elif len(person_indices) > 1:
+                    # multiple people, decide on the best one
+                    if body_average is not None:
+                        # find detection closest to body average
+                        dist = lambda i: center_distance(body_average, boxes[i])
+                    else:
+                        # find detection closest to centerline of juggling
+                        dist = lambda i: abs(boxes[i][0] + 0.5 * boxes[i][2]
+                                             - arc_xaverage[framenum])
+                    best_person = min((index for index in person_indices),
+                                      key=dist)
 
                 if display:
                     for elem in kept_indices:
@@ -1716,12 +1684,6 @@ class HEVideoScanner:
                     cv2.imshow(notes['source'], frame)
                     if cv2.waitKey(10) & 0xFF == ord('q'):  # Q exits
                         break
-
-                """
-                print(f'scanned {body_frames_scanned}, '
-                      f'detected in {frames_with_detections}, '
-                      f'total {body_frames_to_scan}')
-                """
             else:
                 body_average = None
 
@@ -1820,7 +1782,7 @@ class HEVideoScanner:
     def set_body_origin(self):
         """
         Define a centerpoint on each frame with juggling, defined as a point
-        (in juggler coordinates) on the midline of the body, and at the
+        (in screen coordinates) on the midline of the body, and at the
         usual throwing/catching elevation.
 
         First we fill in any missing body measurements with an estimate, in
@@ -1830,16 +1792,13 @@ class HEVideoScanner:
         notes['origin'] = dict()
 
         if self._verbosity >= 2:
-            print('Setting hand levels...')
+            print('setting hand levels...')
 
         arc_count = [0] * notes['frame_count']
         for arc in notes['arcs']:
             start, end = arc.get_frame_range(notes)
             for framenum in range(start, end + 1):
                 arc_count[framenum] += 1
-
-        c = cos(notes['camera_tilt'])
-        s = sin(notes['camera_tilt'])
 
         last_body = None
         bodies_added = 0
@@ -1885,17 +1844,14 @@ class HEVideoScanner:
 
             x, y, w, _, _ = notes['body'][framenum]
 
-            # Assume a hand position 70 centimeters below the top of the head
-            x_origin_screen = x + 0.5 * w
-            y_origin_screen = y + 70.0 / notes['cm_per_pixel']
+            # Assume a hand position 50 centimeters below the top of the head
+            x_origin = x + 0.5 * w
+            y_origin = y + 50.0 / notes['cm_per_pixel']
 
-            # in juggler coordinates:
-            x_origin = x_origin_screen * c - y_origin_screen * s
-            y_origin = x_origin_screen * s + y_origin_screen * c
             notes['origin'][framenum] = (x_origin, y_origin)
 
         if self._verbosity >= 2 and bodies_added > 0:
-            print(f'Added missing body measurements to {bodies_added} frames')
+            print(f'  added missing body measurements to {bodies_added} frames')
 
     def remove_tags_below_hands(self):
         """
@@ -1905,10 +1861,7 @@ class HEVideoScanner:
         notes = self.notes
 
         if self._verbosity >= 2:
-            print('Removing detections below hand level...')
-
-        c = cos(notes['camera_tilt'])
-        s = sin(notes['camera_tilt'])
+            print('removing detections below hand level...')
 
         arcs_to_kill = []
         tags_removed = 0
@@ -1920,8 +1873,7 @@ class HEVideoScanner:
 
             tags_to_kill = []
             for tag in arc.tags:
-                tag_y = tag.x * s + tag.y * c
-                if tag_y > y_origin:
+                if tag.y > y_origin:
                     tags_to_kill.append(tag)
 
             for tag in tags_to_kill:
@@ -1953,7 +1905,7 @@ class HEVideoScanner:
             arcs_removed += 1
 
         if self._verbosity >= 2:
-            print(f'Done: {tags_removed} detections '
+            print(f'  done: {tags_removed} detections '
                   f'removed, {arcs_removed} arcs removed')
 
     def compile_arc_data(self):
@@ -1963,12 +1915,16 @@ class HEVideoScanner:
         """
         notes = self.notes
 
+        s, c = sin(notes['camera_tilt']), cos(notes['camera_tilt'])
+
         for arc in notes['arcs']:
-            # Calculate when each arc was thrown and caught based on hand
-            # height.
             x_origin, y_origin = notes['origin'][round(arc.f_peak)]
 
-            df2 = (y_origin - arc.c) / arc.e
+            # Body origin in juggler coordinates:
+            x_origin_jc = x_origin * c - y_origin * s
+            y_origin_jc = x_origin * s + y_origin * c
+
+            df2 = (y_origin_jc - arc.c) / arc.e
             if df2 > 0:
                 df = sqrt(df2)
             else:
@@ -1980,9 +1936,9 @@ class HEVideoScanner:
 
             arc.f_throw = arc.f_peak - df
             arc.f_catch = arc.f_peak + df
-            arc.x_throw = (arc.a - arc.b * df) - x_origin
-            arc.x_catch = (arc.a + arc.b * df) - x_origin
-            arc.height = y_origin - arc.c
+            arc.x_throw = (arc.a - arc.b * df) - x_origin_jc
+            arc.x_catch = (arc.a + arc.b * df) - x_origin_jc
+            arc.height = y_origin_jc - arc.c
 
     def find_runs(self):
         """
@@ -2723,12 +2679,12 @@ if __name__ == '__main__':
 
     # _filename = 'movies/juggling_test_5.mov'
     # _filename = 'movies/TBTB3_9balls.mov'
-    # _filename = 'movies/GOPR0622.MP4'
-    _filename = 'movies/GOPR0493.MP4'
+    _filename = 'movies/GOPR0622.MP4'
+    # _filename = 'movies/GOPR0493.MP4'
     # _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
-    # _scanvideo = 'movies/__Hawkeye__/GOPR0622_640x480.mp4'
-    _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/GOPR0622_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
 
     watch_video = False
 
