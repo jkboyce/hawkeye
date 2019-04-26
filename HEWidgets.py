@@ -133,8 +133,8 @@ class HEVideoView(QGraphicsView):
         prefs = self.window.prefs
         mapToDisplayVideo = self.window.currentVideoItem.vc.map
 
-        # draw box around juggler torso
-        if prefs['torso'] and notes_framenum in notes['body']:
+        # draw box around juggler body
+        if prefs['body'] and notes_framenum in notes['body']:
             x, y, w, h, detected = notes['body'][notes_framenum]
             dUL_x, dUL_y = mapToDisplayVideo(x, y)
             dLR_x, dLR_y = mapToDisplayVideo(x + w, y + h)
@@ -191,18 +191,18 @@ class HEVideoView(QGraphicsView):
                 break
 
         # position of origin, in view coordinates
-        if notes_framenum in notes['body']:
-            x, y, w, h, _ = notes['body'][notes_framenum]
-            origin_x_px = x + 0.5 * w
-            origin_y_px = y + h
+        if notes_framenum in notes['origin']:
+            origin_x_px, origin_y_px = notes['origin'][notes_framenum]
             origin_x_dv, origin_y_dv = mapToDisplayVideo(
                     origin_x_px, origin_y_px)
             origin_x, origin_y = self.mapToView(origin_x_dv, origin_y_dv)
 
             # work out scaling from centimeters to view
-            ttop_x_dv, ttop_y_dv = mapToDisplayVideo(origin_x_px, y)
-            ttop_x, ttop_y = self.mapToView(ttop_x_dv, ttop_y_dv)
-            view_px_per_cm = (origin_y - ttop_y) / h
+            _, _, w, _, _ = notes['body'][notes_framenum]
+            temp_x_dv, temp_y_dv = mapToDisplayVideo(origin_x_px + 0.5 * w,
+                                                     origin_y_px)
+            temp_x, temp_y = self.mapToView(temp_x_dv, temp_y_dv)
+            view_px_per_cm = (temp_x - origin_x) / (0.5 * w)
 
             # vertical spacing constant for items below
             dy = 5.0 * view_px_per_cm
@@ -229,9 +229,7 @@ class HEVideoView(QGraphicsView):
                 arc_cx_px, arc_cy_px = arc.get_position(arc.f_catch, notes)
                 arc_px_px, arc_py_px = arc.get_position(arc.f_peak, notes)
 
-                x, y, w, h, _ = notes['body'][round(arc.f_peak)]
-                arc_origin_x_px = x + 0.5 * w      # pixel units
-                arc_origin_y_px = y + h
+                arc_origin_x_px, arc_origin_y_px = notes['origin'][round(arc.f_peak)]
 
                 if arc.hand_throw == 'right':
                     peaks_x = peaks_right_x
@@ -391,7 +389,7 @@ class HEVideoView(QGraphicsView):
                              round(cx), round(cy - dy))
 
             # draw centerline marker, if not showing torso box
-            if not prefs['torso']:
+            if not prefs['body']:
                 painter.setPen(QPen(Qt.blue, 2))
                 painter.setOpacity(1.0)
                 painter.drawLine(round(origin_x), round(origin_y - 2.0 * dy),

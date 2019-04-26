@@ -64,12 +64,15 @@ class HEVideoScanner:
     notes['meas'][framenum]:
         list of Balltag objects in frame 'framenum' (list)
     notes['body'][framenum]:
-        tuple describing torso bounding box
+        tuple describing body bounding box
         (body_x, body_y, body_w, body_h, was_detected)
         observed in frame 'framenum', where all values are in camera
         coordinates and pixel units, and was_detected is a boolean indicating
         whether the bounding box was a direct detection (True) or was inferred
         (False) (tuple)
+    notes['origin'][framenum]:
+        tuple (origin_x, origin_y) of body origin in juggler's coordinates
+        and pixel units.
     notes['arcs']:
         list of Ballarc objects detected in video (list)
     notes['g_px_per_frame_sq']:
@@ -811,6 +814,9 @@ class HEVideoScanner:
         if (isnan(arc.a) or isnan(arc.b) or isnan(arc.c) or isnan(arc.e)
                 or isnan(arc.f_peak)):
             return 1
+
+        if len(arc.tags) == 0:
+            return 5
 
         if requirepeak:
             f_min, f_max = arc.get_tag_range()
@@ -1570,9 +1576,6 @@ class HEVideoScanner:
             framereads += 1
 
             if not ret:
-                if self._verbosity >= 2:
-                    print('VideoCapture.read() returned False '
-                          'on frame read {}'.format(framereads))
                 if framereads > framecount:
                     break
                 continue
@@ -1754,8 +1757,8 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Juggling analyzer starting...')
 
-        self.add_missing_body_measurements()
-        self.set_hand_origins()
+        self.set_body_origin()
+        self.remove_tags_below_hands()
         self.compile_arc_data()
         runs = self.find_runs()
 
@@ -1814,21 +1817,42 @@ class HEVideoScanner:
         if self._verbosity >= 1:
             print('Juggling analyzer done')
 
-    def add_missing_body_measurements(self):
+    def set_body_origin(self):
         """
-        Because the YOLO detector is not perfect, the juggler may not be
-        detected on every frame. Fill in missing measurements with an estimate.
+        Define a centerpoint on each frame with juggling, defined as a point
+        (in juggler coordinates) on the midline of the body, and at the
+        usual throwing/catching elevation.
+
+        First we fill in any missing body measurements with an estimate, in
+        case the detector didn't work.
         """
         notes = self.notes
-        last_torso = None
-        add_count = 0
+        notes['origin'] = dict()
+
+        if self._verbosity >= 2:
+            print('Setting hand levels...')
+
+        arc_count = [0] * notes['frame_count']
+        for arc in notes['arcs']:
+            start, end = arc.get_frame_range(notes)
+            for framenum in range(start, end + 1):
+                arc_count[framenum] += 1
+
+        c = cos(notes['camera_tilt'])
+        s = sin(notes['camera_tilt'])
+
+        last_body = None
+        bodies_added = 0
 
         for framenum in range(0, notes['frame_count']):
+            if arc_count[framenum] == 0:
+                continue
+
             if framenum in notes['body']:
-                last_torso = notes['body'][framenum]
+                last_body = notes['body'][framenum]
             else:
                 """
-                Torso was not detected for this frame. Estimate the torso box
+                Body was not detected for this frame. Estimate the body box
                 based on tagged ball positions. Find the most extremal tags
                 nearby in time.
                 """
@@ -1844,8 +1868,8 @@ class HEVideoScanner:
                     x_min = median(t.x for t in x_sorted_tags[:5])
                     x_max = median(t.x for t in x_sorted_tags[-5:])
 
-                    if last_torso is not None:
-                        _, y, w, h, _ = last_torso
+                    if last_body is not None:
+                        _, y, w, h, _ = last_body
                         x = 0.5 * (x_min + x_max - w)
                     else:
                         y_sorted_tags = sorted(nearby_tags, key=lambda t: t.y)
@@ -1856,51 +1880,54 @@ class HEVideoScanner:
                         x, y = 0.5 * (x_min + x_max - w), y_max - h
 
                     notes['body'][framenum] = (x, y, w, h, False)
-                    add_count += 1
-                    # print(f'added torso to frame {framenum}')
+                    bodies_added += 1
+                    # print(f'added body to frame {framenum}')
 
-        if self._verbosity >= 2:
-            print(f'Added missing body measurements to {add_count} frames')
+            x, y, w, _, _ = notes['body'][framenum]
 
-    def set_hand_origins(self):
+            # Assume a hand position 70 centimeters below the top of the head
+            x_origin_screen = x + 0.5 * w
+            y_origin_screen = y + 70.0 / notes['cm_per_pixel']
+
+            # in juggler coordinates:
+            x_origin = x_origin_screen * c - y_origin_screen * s
+            y_origin = x_origin_screen * s + y_origin_screen * c
+            notes['origin'][framenum] = (x_origin, y_origin)
+
+        if self._verbosity >= 2 and bodies_added > 0:
+            print(f'Added missing body measurements to {bodies_added} frames')
+
+    def remove_tags_below_hands(self):
         """
-        The scanner doesn't detect the juggler's hands, so we have to infer
-        a throwing and catching elevation using some heuristics. For each arc
-        determine an origin, located on the centerline and at the inferred
-        elevation.
+        Delete any tags that are below the hand height defined above. If
+        this renders any arcs unviable then delete those as well.
         """
         notes = self.notes
-        arcs = notes['arcs']
+
+        if self._verbosity >= 2:
+            print('Removing detections below hand level...')
 
         c = cos(notes['camera_tilt'])
         s = sin(notes['camera_tilt'])
 
         arcs_to_kill = []
-        tags_killed = 0
-        arcs_killed = 0
+        tags_removed = 0
+        arcs_removed = 0
 
-        for arc in arcs:
-            x, y, w, _, _ = notes['body'][round(arc.f_peak)]
-
-            # Assume a hand position 1 meter below the top of the head
-            x_origin_screen = x + 0.5 * w
-            y_origin_screen = y + 100.0 / notes['cm_per_pixel']
-
-            # in juggler coordinates:
-            arc.x_origin = x_origin_screen * c - y_origin_screen * s
-            arc.y_origin = x_origin_screen * s + y_origin_screen * c
-
+        for arc in notes['arcs']:
             # delete any tags attached to the arc that are below hand height
+            _, y_origin = notes['origin'][round(arc.f_peak)]
+
             tags_to_kill = []
             for tag in arc.tags:
                 tag_y = tag.x * s + tag.y * c
-                if tag_y > arc.y_origin:
+                if tag_y > y_origin:
                     tags_to_kill.append(tag)
 
             for tag in tags_to_kill:
                 arc.tags.remove(tag)
                 notes['meas'][tag.frame].remove(tag)
-                tags_killed += 1
+                tags_removed += 1
 
             # check if the arc is still viable
             if len(tags_to_kill) > 0:
@@ -1908,89 +1935,26 @@ class HEVideoScanner:
                     arcs_to_kill.append(arc)
 
         for arc in arcs_to_kill:
-            arcs_killed += 1
+            notes['arcs'].remove(arc)
+            tags_to_kill = []
 
-        """
-        if self._verbosity >= 2:
-            print('cleaning notes...')
+            for tag in arc.tags:
+                tags_to_kill.append(tag)
 
-        for frame in notes['meas']:
-            for tag in notes['meas'][frame]:
-                tag.done = False
-        for arc in notes['arcs']:
-            arc.done = False
+            for tag in tags_to_kill:
+                arc.tags.remove(tag)
+                notes['meas'][tag.frame].remove(tag)
+                tags_removed += 1
 
-        tags_removed = tags_remaining = arcs_removed = 0
-        keep_cleaning = True
-
-        while keep_cleaning:
-            for frame in notes['meas']:
-                tags_to_kill = []
-
-                for tag in notes['meas'][frame]:
-                    if tag.done:
-                        continue
-                    if not self.is_tag_good(tag):
-                        tags_to_kill.append(tag)
-                        continue
-                    tag.done = True
-
-                for tag in tags_to_kill:
-                    notes['meas'][frame].remove(tag)
-                    for arc in tag.weight:
-                        arc.tags.remove(tag)
-                        arc.done = False
-                    tags_removed += 1
-
-            if self._callback is not None:
-                self._callback()
-
-            arcs_to_kill = []
-            keep_cleaning = False
-
-            for arc in notes['arcs']:
-                if arc.done:
-                    continue
-                if self.eval_arc(arc, requirepeak=True) > 0:
-                    arcs_to_kill.append(arc)
-                    continue
-                arc.done = True
-
-            for arc in arcs_to_kill:
-                notes['arcs'].remove(arc)
-                for tag in arc.tags:
-                    try:
-                        del tag.weight[arc]
-                    except (AttributeError, TypeError, KeyError):
-                        pass
-                    tag.done = False
-                keep_cleaning = True
-                arcs_removed += 1
-                if self._verbosity >= 2:
-                    f_min, _ = arc.get_frame_range(notes)
-                    print('  removed arc {} starting at frame {}'.format(
-                            arc.id_, f_min))
-
-        # Final cleanup: Delete unneeded data and make final assignments of
-        # tags to arcs.
-        for arc in notes['arcs']:
-            del arc.done
-            arc.tags = set()
-        for frame in notes['meas']:
-            for tag in notes['meas'][frame]:
-                temp = [(arc, arc.get_distance_from_tag(tag, notes))
-                        for arc in tag.weight]
-                final_arc, _ = min(temp, key=lambda x: x[1])
-                tag.arc = final_arc
-                final_arc.tags.add(tag)
-                del tag.weight
-                del tag.done
-                tags_remaining += 1
+            if self._verbosity >= 2:
+                f_min, _ = arc.get_frame_range(notes)
+                print('  removed arc {} starting at frame {}'.format(
+                        arc.id_, f_min))
+            arcs_removed += 1
 
         if self._verbosity >= 2:
-            print(f'cleaning done: {tags_removed} detections removed, '
-                  f'{tags_remaining} remaining, {arcs_removed} arcs removed')
-        """
+            print(f'Done: {tags_removed} detections '
+                  f'removed, {arcs_removed} arcs removed')
 
     def compile_arc_data(self):
         """
@@ -1998,39 +1962,27 @@ class HEVideoScanner:
         height, throw position relative to centerline, etc.
         """
         notes = self.notes
-        arcs = notes['arcs']
 
-        c = cos(notes['camera_tilt'])
-        s = sin(notes['camera_tilt'])
+        for arc in notes['arcs']:
+            # Calculate when each arc was thrown and caught based on hand
+            # height.
+            x_origin, y_origin = notes['origin'][round(arc.f_peak)]
 
-        for arc in arcs:
-            # Calculate when each arc was thrown and caught. Assume that the
-            # bottom of the torso measurement box represents the throw and
-            # catch elevation.
-            x, y, w, h, _ = notes['body'][round(arc.f_peak)]
-
-            # (xs_b, ys_b) are the screen coordinates of the bottom center
-            # of the torso box
-            xs_b = x + 0.5 * w
-            ys_b = y + h
-            # in juggler coordinates:
-            x_b = xs_b * c - ys_b * s
-            y_b = xs_b * s + ys_b * c
-
-            df2 = (y_b - arc.c) / arc.e
+            df2 = (y_origin - arc.c) / arc.e
             if df2 > 0:
                 df = sqrt(df2)
             else:
-                # throw peak is below the bottom of the torso box (rare)
+                # throw peak is below hand height
+                # (shouldn't be able to happen)
                 arc_fmin, arc_fmax = arc.get_tag_range()
                 df = max(abs(arc.f_peak - arc_fmin),
                          abs(arc.f_peak - arc_fmax))
 
             arc.f_throw = arc.f_peak - df
             arc.f_catch = arc.f_peak + df
-            arc.x_throw = (arc.a - arc.b * df) - x_b
-            arc.x_catch = (arc.a + arc.b * df) - x_b
-            arc.height = y_b - arc.c
+            arc.x_throw = (arc.a - arc.b * df) - x_origin
+            arc.x_catch = (arc.a + arc.b * df) - x_origin
+            arc.height = y_origin - arc.c
 
     def find_runs(self):
         """
@@ -2676,7 +2628,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
         if framenum >= startframe:
             if framenum in body:
-                # draw torso bounding box
+                # draw body bounding box
                 x, y, w, h, detected = notes['body'][framenum]
                 x = int(round(x))
                 y = int(round(y))
@@ -2771,10 +2723,12 @@ if __name__ == '__main__':
 
     # _filename = 'movies/juggling_test_5.mov'
     # _filename = 'movies/TBTB3_9balls.mov'
-    _filename = 'movies/GOPR0622.MP4'
+    # _filename = 'movies/GOPR0622.MP4'
+    _filename = 'movies/GOPR0493.MP4'
     # _scanvideo = 'movies/__Hawkeye__/juggling_test_5_640x480.mp4'
     # _scanvideo = 'movies/__Hawkeye__/TBTB3_9balls_640x480.mp4'
-    _scanvideo = 'movies/__Hawkeye__/GOPR0622_640x480.mp4'
+    # _scanvideo = 'movies/__Hawkeye__/GOPR0622_640x480.mp4'
+    _scanvideo = 'movies/__Hawkeye__/GOPR0493_640x480.mp4'
 
     watch_video = False
 

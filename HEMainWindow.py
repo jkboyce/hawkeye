@@ -60,7 +60,7 @@ class HEMainWindow(QMainWindow):
             'carries': True,
             'ideal_points': True,
             'accuracy_overlay': True,
-            'torso': False,
+            'body': False,
             'resolution': 'Actual size'
         }
 
@@ -277,7 +277,7 @@ class HEMainWindow(QMainWindow):
                     'Ideal throw and catch points')
         self.prefs_accuracy_overlay = QCheckBox(
                     'Throwing accuracy overlay')
-        self.prefs_torso = QCheckBox('Torso position')
+        self.prefs_body = QCheckBox('Body position')
 
         resolution_layout = QHBoxLayout()
         resolution_layout.setAlignment(Qt.AlignLeft)
@@ -300,7 +300,7 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.prefs_carries)
         controls_layout.addWidget(self.prefs_ideal_points)
         controls_layout.addWidget(self.prefs_accuracy_overlay)
-        controls_layout.addWidget(self.prefs_torso)
+        controls_layout.addWidget(self.prefs_body)
         controls_layout.addLayout(resolution_layout)
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
@@ -956,12 +956,12 @@ class HEMainWindow(QMainWindow):
 
                 try:
                     x, _, w, _, _ = notes['body'][round(arc.f_peak)]
-                    torso_x = (x + 0.5 * w) * notes['cm_per_pixel']
-                    torso_x_str = f'{torso_x:.1f}'
-                    throw_x -= torso_x
-                    catch_x -= torso_x
+                    body_x = (x + 0.5 * w) * notes['cm_per_pixel']
+                    body_x_str = f'{body_x:.1f}'
+                    throw_x -= body_x
+                    catch_x -= body_x
                 except KeyError:
-                    torso_x_str = '-'
+                    body_x_str = '-'
                 prev_id = '-' if arc.prev is None else str(arc.prev.throw_id)
                 next_id = '-' if arc.next is None else str(arc.next.throw_id)
 
@@ -982,7 +982,7 @@ class HEMainWindow(QMainWindow):
                         f'{throw_t:.3f}'))
                 self.dataWidget.setItem(row, 8, QTableWidgetItem(
                         f'{catch_t:.3f}'))
-                self.dataWidget.setItem(row, 9, QTableWidgetItem(torso_x_str))
+                self.dataWidget.setItem(row, 9, QTableWidgetItem(body_x_str))
                 self.dataWidget.setItem(row, 10, QTableWidgetItem(prev_id))
                 self.dataWidget.setItem(row, 11, QTableWidgetItem(next_id))
                 for col, align in enumerate(alignments):
@@ -1037,7 +1037,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_carries.setChecked(self.prefs['carries'])
         self.prefs_ideal_points.setChecked(self.prefs['ideal_points'])
         self.prefs_accuracy_overlay.setChecked(self.prefs['accuracy_overlay'])
-        self.prefs_torso.setChecked(self.prefs['torso'])
+        self.prefs_body.setChecked(self.prefs['body'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
         self.player_stackedWidget.setCurrentIndex(1)
 
@@ -1054,7 +1054,7 @@ class HEMainWindow(QMainWindow):
         self.prefs['ideal_points'] = self.prefs_ideal_points.isChecked()
         self.prefs['accuracy_overlay'] = \
             self.prefs_accuracy_overlay.isChecked()
-        self.prefs['torso'] = self.prefs_torso.isChecked()
+        self.prefs['body'] = self.prefs_body.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
         self.sig_new_prefs.emit(self.prefs)
         self.player_stackedWidget.setCurrentIndex(0)
