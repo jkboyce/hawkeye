@@ -9,7 +9,7 @@ The goal of Hawkeye is to help jugglers understand their form and improve their 
 practice video easily and efficiently.
 
 ### Application downloads
-[Hawkeye-1.0.dmg](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.0.dmg) -- Mac OS X (Mac OS 10.11 or above)
+[Hawkeye-1.1.dmg](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.1.dmg) -- Mac OS X (Mac OS 10.11 or above)
 _(Note: If launching the app gives an "identity of the developer cannot be confirmed" message, right-click on the
 app and select Open, then select Open in the dialog box. After it launches successfully the warning message won't
 appear again.)_
