@@ -29,7 +29,7 @@ class HEMainWindow(QMainWindow):
     """
     The main application window.
     """
-    CURRENT_APP_VERSION = "1.0"
+    CURRENT_APP_VERSION = "1.1"
 
     # signal that informs worker of new display preferences
     sig_new_prefs = Signal(dict)
