@@ -415,7 +415,7 @@ class HEMainWindow(QMainWindow):
                'YOLOv2-tiny (MIT License), '
                'Qt version 5.6.2 (LGPL v2.1), '
                'PySide2 version 5.6.0 (LGPL v2.1), '
-               'FFmpeg version 3.4.2 (LGPL v2.1).</small></p>'
+               'FFmpeg/FFprobe version 4.1.1 (LGPL v2.1).</small></p>'
                )
 
         text_widget = QLabel(msg)
