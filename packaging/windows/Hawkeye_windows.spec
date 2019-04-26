@@ -17,12 +17,14 @@ a = Analysis(['../../Hawkeye.py'],
                        ('postproc-54.dll', '.'),
                        ('swresample-2.dll', '.'),
                        ('swscale-4.dll', '.'),
-                       ('opencv_ffmpeg341_64.dll', '.')
+                       ('opencv_ffmpeg344_64.dll', '.')
                       ],
-             datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
-                    ('../../resources/about_icon.png', './resources'),
+             datas=[('../../resources/about_icon.png', './resources'),
                     ('../../resources/preferences_icon.png', './resources'),
-                    ('../../resources/busy_icon.gif', './resources')
+                    ('../../resources/busy_icon.gif', './resources'),
+                    ('../../resources/yolo-classes.txt', './resources'),
+                    ('../../resources/yolov2-tiny.cfg', './resources'),
+                    ('../../resources/yolov2-tiny.weights', './resources')
              ],
              hiddenimports=[],
              hookspath=[],
