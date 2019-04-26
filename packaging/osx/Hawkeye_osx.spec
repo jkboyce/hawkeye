@@ -14,10 +14,12 @@ a = Analysis(['../../Hawkeye.py'],
                        ('libpostproc.54.dylib', '.'),
                        ('libxvidcore.4.dylib', '.')
                       ],
-             datas=[('../../resources/haarcascade_upperbody.xml', './resources'),
-                    ('../../resources/about_icon.png', './resources'),
+             datas=[('../../resources/about_icon.png', './resources'),
                     ('../../resources/preferences_icon.png', './resources'),
-                    ('../../resources/busy_icon.gif', './resources')
+                    ('../../resources/busy_icon.gif', './resources'),
+                    ('../../resources/yolo-classes.txt', './resources'),
+                    ('../../resources/yolov2-tiny.cfg', './resources'),
+                    ('../../resources/yolov2-tiny.weights', './resources')
              ],
              hiddenimports=[],
              hookspath=[],
@@ -37,28 +39,10 @@ exe = EXE(pyz,
           upx=True,
           console=False )
 
-# Files that Pyinstaller's dependency checker pulls in but aren't needed, so
-# remove them from the build. These total 367 MB.
-
+# This is how we manually remove files from the Pyinstaller build, when the
+# dependency checker gets things wrong:
 Hawkeye_excludes = [
                 'libmkl_avx.dylib',
-                'libmkl_avx512.dylib',
-                'libmkl_blacs_mpich_ilp64.dylib',
-                'libmkl_blacs_mpich_lp64.dylib',
-                'libmkl_cdft_core.dylib',
-                'libmkl_intel_ilp64.dylib',
-                'libmkl_mc.dylib',
-                'libmkl_mc3.dylib',
-                'libmkl_scalapack_ilp64.dylib',
-                'libmkl_scalapack_lp64.dylib',
-                'libmkl_sequential.dylib',
-                'libmkl_tbb_thread.dylib',
-                'libmkl_vml_avx.dylib',
-                'libmkl_vml_avx2.dylib',
-                'libmkl_vml_avx512.dylib',
-                'libmkl_vml_mc.dylib',
-                'libmkl_vml_mc2.dylib',
-                'libmkl_vml_mc3.dylib',
                 ]
 a.binaries = a.binaries - TOC([(x, None, None) for x in Hawkeye_excludes])
 
