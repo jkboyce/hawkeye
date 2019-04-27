@@ -184,10 +184,18 @@ class HEVideoView(QGraphicsView):
 
         # figure out which run number we're in, if any
         run_id = None
-        for rid, run_dict in enumerate(notes['run'], start=1):
-            frame_start, frame_end = run_dict['frame range']
-            if round(frame_start) <= framenum <= round(frame_end):
-                run_id = rid
+        for i in range(self.window.viewList.count()):
+            viewitem = self.window.viewList.item(i)
+            if viewitem._type == 'run' and viewitem.isSelected():
+                if viewitem._startframe <= framenum <= viewitem._endframe:
+                    run_id = viewitem._runindex + 1
+
+                    fs, fe = notes['run'][run_id - 1]['frame range']
+                    if framenum < fs:
+                        # so we can see accuracy overlay before run starts: 
+                        notes_framenum = next(frame for frame
+                                              in range(round(fs), round(fe))
+                                              if frame in notes['origin'])
                 break
 
         # position of origin, in view coordinates
@@ -202,10 +210,11 @@ class HEVideoView(QGraphicsView):
             temp_x_dv, temp_y_dv = mapToDisplayVideo(origin_x_px + 0.5 * w,
                                                      origin_y_px)
             temp_x, temp_y = self.mapToView(temp_x_dv, temp_y_dv)
-            view_px_per_cm = (temp_x - origin_x) / (0.5 * w)
+            view_px_per_cm = ((temp_x - origin_x)
+                              / (0.5 * w * notes['cm_per_pixel']))
 
             # vertical spacing constant for items below
-            dy = 5.0 * view_px_per_cm
+            dy = max(2.0 * view_px_per_cm, 2.0)
         else:
             run_id = None
 
