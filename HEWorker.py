@@ -223,7 +223,7 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(clip_path)
-            except OSError as err:
+            except OSError:
                 pass
             if not self.abort():
                 self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
@@ -472,7 +472,7 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(displayvid_path)
-            except OSError as err:
+            except OSError:
                 # print("got exception: {}".format(err))
                 pass
             if not self.abort():
@@ -527,7 +527,7 @@ class HEWorker(QObject):
         if retcode != 0 or self.abort():
             try:
                 os.remove(scanvid_path)
-            except OSError as err:
+            except OSError:
                 # print("got exception: {}".format(err))
                 pass
             if not self.abort():

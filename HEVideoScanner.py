@@ -1435,7 +1435,8 @@ class HEVideoScanner:
     def detect_juggler(self, display=False):
         """
         Find coordinates of the juggler's body in each frame of the video
-        containing juggling, and store in the self.notes dictionary.
+        containing juggling, and store in the self.notes dictionary. The
+        YOLOv2-tiny neural network is used to recognize the juggler.
 
         Args:
             display(bool, optional):
@@ -1529,13 +1530,6 @@ class HEVideoScanner:
         conf_threshold = 0.5
         nms_threshold = 0.4
 
-        def center_distance(a, b):
-            ax, ay, aw, ah = a
-            bx, by, bw, bh = b
-            dx = (ax + aw / 2) - (bx + bw / 2)
-            dy = (ay + ah / 2) - (by + bh / 2)
-            return sqrt(dx * dx + dy * dy)
-
         if display:
             cv2.namedWindow(notes['source'])
 
@@ -1543,8 +1537,8 @@ class HEVideoScanner:
                                     x, y, x_plus_w, y_plus_h, confidence):
                 label = f'{str(classes[class_id])} {confidence:.2f}'
                 cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
-                cv2.putText(img, label, (x-10, y-10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.5, color, 2)
+                cv2.putText(img, label, (x-10, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
         framenum = framereads = 0
         body_frames_scanned = 0
@@ -1619,11 +1613,21 @@ class HEVideoScanner:
                     # multiple people, decide on the best one
                     if body_average is not None:
                         # find detection closest to body average
-                        dist = lambda i: center_distance(body_average, boxes[i])
+                        def center_distance(a, b):
+                            ax, ay, aw, ah = a
+                            bx, by, bw, bh = b
+                            dx = (ax + aw / 2) - (bx + bw / 2)
+                            dy = (ay + ah / 2) - (by + bh / 2)
+                            return sqrt(dx * dx + dy * dy)
+
+                        def dist(i):
+                            return center_distance(body_average, boxes[i])
                     else:
                         # find detection closest to centerline of juggling
-                        dist = lambda i: abs(boxes[i][0] + 0.5 * boxes[i][2]
-                                             - arc_xaverage[framenum])
+                        def dist(i):
+                            return abs(boxes[i][0] + 0.5 * boxes[i][2]
+                                       - arc_xaverage[framenum])
+
                     best_person = min((index for index in person_indices),
                                       key=dist)
 
@@ -1851,7 +1855,8 @@ class HEVideoScanner:
             notes['origin'][framenum] = (x_origin, y_origin)
 
         if self._verbosity >= 2 and bodies_added > 0:
-            print(f'  added missing body measurements to {bodies_added} frames')
+            print('  added missing body measurements '
+                  f'to {bodies_added} frames')
 
     def remove_tags_below_hands(self):
         """
@@ -1870,11 +1875,7 @@ class HEVideoScanner:
         for arc in notes['arcs']:
             # delete any tags attached to the arc that are below hand height
             _, y_origin = notes['origin'][round(arc.f_peak)]
-
-            tags_to_kill = []
-            for tag in arc.tags:
-                if tag.y > y_origin:
-                    tags_to_kill.append(tag)
+            tags_to_kill = [tag for tag in arc.tags if tag.y > y_origin]
 
             for tag in tags_to_kill:
                 arc.tags.remove(tag)
@@ -1888,10 +1889,7 @@ class HEVideoScanner:
 
         for arc in arcs_to_kill:
             notes['arcs'].remove(arc)
-            tags_to_kill = []
-
-            for tag in arc.tags:
-                tags_to_kill.append(tag)
+            tags_to_kill = list(arc.tags)
 
             for tag in tags_to_kill:
                 arc.tags.remove(tag)
@@ -1928,8 +1926,7 @@ class HEVideoScanner:
             if df2 > 0:
                 df = sqrt(df2)
             else:
-                # throw peak is below hand height
-                # (shouldn't be able to happen)
+                # throw peak is below hand height (should never happen!)
                 arc_fmin, arc_fmax = arc.get_tag_range()
                 df = max(abs(arc.f_peak - arc_fmin),
                          abs(arc.f_peak - arc_fmax))
