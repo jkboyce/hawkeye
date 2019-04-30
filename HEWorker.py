@@ -160,6 +160,10 @@ class HEWorker(QObject):
             if self.run_scanner(fileinfo, scanner, steps=(2, 6),
                                 writenotes=True) != 0:
                 return
+            try:
+                os.remove(fileinfo['scanvid_path'])
+            except OSError:
+                pass
 
         if not self.abort():
             self.sig_notes_done.emit(file_id, notes)
