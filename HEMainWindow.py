@@ -1383,7 +1383,7 @@ class HEMainWindow(QMainWindow):
                 self.repaintPlayer()
         elif key == Qt.Key_Up:
             # toggle accuracy-related overlays
-            if notes is not None and notes['step'] >= 5:
+            if notes is not None and notes['step'] >= 5 and vc.overlays:
                 active = not self.prefs['accuracy_overlay']
                 self.prefs['ideal_points'] = active
                 self.prefs['accuracy_overlay'] = active
