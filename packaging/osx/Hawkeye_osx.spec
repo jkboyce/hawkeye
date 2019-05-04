@@ -20,7 +20,8 @@ a = Analysis(['../../Hawkeye.py'],
                     ('../../resources/busy_icon.gif', './resources'),
                     ('../../resources/yolo-classes.txt', './resources'),
                     ('../../resources/yolov2-tiny.cfg', './resources'),
-                    ('../../resources/yolov2-tiny.weights', './resources')
+                    ('../../resources/yolov2-tiny.weights', './resources'),
+                    ('../../resources/billiard-balls.wav', './resources')
              ],
              hiddenimports=[],
              hookspath=[],

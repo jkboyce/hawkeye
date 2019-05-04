@@ -18,7 +18,7 @@ from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QProgressBar, QMainWindow, QAction, QComboBox,
                                QAbstractItemView, QToolButton, QCheckBox,
                                QTableWidget, QTableWidgetItem, QMessageBox)
-from PySide2.QtMultimedia import QMediaContent, QMediaPlayer
+from PySide2.QtMultimedia import QMediaContent, QMediaPlayer, QSoundEffect
 
 from HEWorker import HEWorker
 from HEWidgets import (HEVideoView, HEVideoList, HEViewList,
@@ -61,6 +61,7 @@ class HEMainWindow(QMainWindow):
             'ideal_points': True,
             'accuracy_overlay': True,
             'body': False,
+            'throw_sounds': False,
             'resolution': 'Actual size'
         }
 
@@ -70,6 +71,7 @@ class HEMainWindow(QMainWindow):
             self.prefs['resolution'] = '720'
 
         self.makeUI()
+        self.loadSounds()
         self.grabKeyboard()
         self.startWorker()
 
@@ -278,6 +280,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_accuracy_overlay = QCheckBox(
                     'Throwing accuracy overlay')
         self.prefs_body = QCheckBox('Body position')
+        self.prefs_sounds = QCheckBox('Throw sounds')
 
         resolution_layout = QHBoxLayout()
         resolution_layout.setAlignment(Qt.AlignLeft)
@@ -293,7 +296,7 @@ class HEMainWindow(QMainWindow):
         controls_layout = QVBoxLayout()
         controls_layout.setContentsMargins(10, 0, 30, 0)
         controls_layout.setAlignment(Qt.AlignVCenter)
-        controls_layout.addWidget(QLabel('Video display options:'))
+        controls_layout.addWidget(QLabel('Video playback options:'))
         controls_layout.addWidget(self.prefs_markers)
         controls_layout.addWidget(self.prefs_throwlabels)
         controls_layout.addWidget(self.prefs_parabolas)
@@ -301,6 +304,7 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.prefs_ideal_points)
         controls_layout.addWidget(self.prefs_accuracy_overlay)
         controls_layout.addWidget(self.prefs_body)
+        controls_layout.addWidget(self.prefs_sounds)
         controls_layout.addLayout(resolution_layout)
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
@@ -445,6 +449,27 @@ class HEMainWindow(QMainWindow):
         about_widget = QWidget()
         about_widget.setLayout(about_layout)
         return about_widget
+
+    # -------------------------------------------------------------------------
+    #  Load sound resources
+    # -------------------------------------------------------------------------
+
+    def loadSounds(self):
+        """
+        Load sound file that is played during a throw.
+        """
+        if getattr(sys, 'frozen', False):
+            # we are running in a bundle
+            base_dir = sys._MEIPASS
+        else:
+            # we are running in a normal Python environment
+            base_dir = os.path.dirname(os.path.realpath(__file__))
+
+        throw_wav_file = os.path.join(base_dir,
+                                      'resources/billiard-balls.wav')
+        self.throwsound = QSoundEffect()
+        self.throwsound.setSource(QUrl.fromLocalFile(throw_wav_file))
+        self.throwsound.setVolume(0.5)
 
     # -------------------------------------------------------------------------
     #  Worker thread
@@ -1038,6 +1063,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_ideal_points.setChecked(self.prefs['ideal_points'])
         self.prefs_accuracy_overlay.setChecked(self.prefs['accuracy_overlay'])
         self.prefs_body.setChecked(self.prefs['body'])
+        self.prefs_sounds.setChecked(self.prefs['throw_sounds'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
         self.player_stackedWidget.setCurrentIndex(1)
 
@@ -1055,6 +1081,7 @@ class HEMainWindow(QMainWindow):
         self.prefs['accuracy_overlay'] = \
             self.prefs_accuracy_overlay.isChecked()
         self.prefs['body'] = self.prefs_body.isChecked()
+        self.prefs['throw_sounds'] = self.prefs_sounds.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
         self.sig_new_prefs.emit(self.prefs)
         self.player_stackedWidget.setCurrentIndex(0)

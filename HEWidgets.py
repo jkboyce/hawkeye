@@ -28,6 +28,11 @@ class HEVideoView(QGraphicsView):
         self.setFrameShape(QGraphicsView.NoFrame)
         self.window = main_window
         self.videosnappedtoframe = True
+        # Next variable keeps track of the last frame number when we played
+        # the throwing sound. Sometimes paintEvent() will get called twice in
+        # a row for the same frame number, so this ensures we only play the
+        # sound once for any given throw.
+        self.lastframethrowsound = None
 
     def do_playback_control(self, framenum):
         """
@@ -117,9 +122,10 @@ class HEVideoView(QGraphicsView):
 
         Draw any overlays on the video frame, for the current frame number.
         """
-        if not self.window.currentVideoItem.vc.overlays:
+        vc = self.window.currentVideoItem.vc
+        if not vc.overlays:
             return
-        notes = self.window.currentVideoItem.vc.notes
+        notes = vc.notes
         if notes is None or notes['step'] < 5:
             return
 
@@ -131,7 +137,7 @@ class HEVideoView(QGraphicsView):
             notes_framenum = framenum
 
         prefs = self.window.prefs
-        mapToDisplayVideo = self.window.currentVideoItem.vc.map
+        mapToDisplayVideo = vc.map
 
         # draw box around juggler body
         if prefs['body'] and notes_framenum in notes['body']:
@@ -499,6 +505,16 @@ class HEVideoView(QGraphicsView):
                     painter.drawEllipse(QPoint(xc, yc), 2, 2)
                     painter.drawLine(round(xt), round(yt),
                                      round(xc), round(yc))
+
+                # play throwing sound
+                if prefs['throw_sounds']:
+                    if vc.player.state() == QMediaPlayer.PlayingState:
+                        if self.lastframethrowsound != framenum:
+                            self.window.throwsound.setLoopCount(0)
+                            self.window.throwsound.play()
+                            self.lastframethrowsound = framenum
+                    else:
+                        self.lastframethrowsound = None
 
             # draw throw number next to arc position
             if prefs['throw_labels']:
