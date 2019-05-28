@@ -99,7 +99,7 @@ class Ballarc:
         f_min_y = int(f_min_y + 1)
         f_max_y = int(f_max_y + 1)
 
-        return max(0, f_min_x, f_min_y), min(frame_count, f_max_x, f_max_y)
+        return max(0, f_min_x, f_min_y), min(frame_count - 1, f_max_x, f_max_y)
 
     def get_tag_range(self):
         """
