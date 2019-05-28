@@ -406,7 +406,7 @@ class HEMainWindow(QMainWindow):
                '(hold to continue cueing)</li>'
                '<li>z, x: step backward/forward by one throw</li>'
                '<li>a, s: step backward/forward by one run</li>'
-               '<li>down: toggle overlays</li>'
+               '<li>down: toggle all overlays/sounds</li>'
                '<li>up: toggle accuracy-related overlays</li>'
                '<li>k: save video clip of current run</li>'
                '</ul>'
