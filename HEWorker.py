@@ -39,36 +39,39 @@ class HEWorker(QObject):
     see how this thread is initiated and signals and slots connected.
     """
 
+    # signal output from processing
+    #    arg1(str) = video file_id
+    #    arg2(str) = processing output (should be appended to any prev. output)
+    sig_output = Signal(str, str)
+
     # progress indicator signal for work-in-process
     #    arg1(str) = video file_id
     #    arg2(int) = step #
     #    arg3(int) = max # of steps
     sig_progress = Signal(str, int, int)
 
-    # signal output from processing
-    #    arg1(str) = video file_id
-    #    arg2(str) = processing output (should be appended to any prev. output)
-    sig_output = Signal(str, str)
-
     # signal that processing failed with an error
     #    arg1(str) = video file_id
     #    arg2(str) = error message
     sig_error = Signal(str, str)
 
-    # signal that display video (from FFmpeg transcoding) is done
+    # signal video transcoding task is done
     #    arg1(str) = video file_id
     #    arg2(dict) = fileinfo dictionary with file path names
     #    arg3(int) = resolution (vertical pixels) of converted video
     #    arg4(int) = preliminary version of notes dictionary for video
-    sig_video_done = Signal(str, dict, int, dict)
+    #    arg5(bool) = successful completion
+    sig_video_done = Signal(str, dict, int, dict, bool)
 
-    # signal that notes processing (object detection) is done
+    # signal juggling analysis task is done
     #    arg1(str) = video file_id
-    #    arg2(dict) = notes dictionary for video
-    sig_notes_done = Signal(str, dict)
+    #    arg2(dict) = notes dictionary
+    #    arg3(bool) = successful completion
+    sig_analyze_done = Signal(str, dict, bool)
 
-    # signal that making a video clip is done
-    sig_clipping_done = Signal()
+    # signal that video clipping task is done
+    #    arg1(bool) = successful completion
+    sig_clipping_done = Signal(bool)
 
     def __init__(self, app=None):
         super().__init__()
@@ -89,53 +92,119 @@ class HEWorker(QObject):
             self._resolution = int(prefs['resolution'])
 
     @Slot(str)
-    def on_process_video(self, file_id: str):
+    def on_process_video(self, file_id: str, analyze: bool):
         """
-        Signaled when the worker should process a video.
+        Signaled when the worker should process a video to make the version
+        suitable for single-frame stepping.
+
+        When `analyze` is true, subsequently analyze the video for juggling
+        content.
         """
         if self.abort():
             return
 
         fileinfo = self.make_product_fileinfo(file_id)
+        notes = None
 
-        # check if the file exists and is readable
-        file_path = fileinfo['file_path']
-        errorstring = ''
-        if not os.path.exists(file_path):
-            errorstring = f'File {file_path} does not exist'
-        elif not os.path.isfile(file_path):
-            errorstring = f'File {file_path} is not a file'
-        if errorstring != '':
-            self.sig_error.emit(file_id, errorstring)
+        try:
+            # check if the file exists and is readable
+            file_path = fileinfo['file_path']
+            errorstring = ''
+            if not os.path.exists(file_path):
+                errorstring = f'File {file_path} does not exist'
+            elif not os.path.isfile(file_path):
+                errorstring = f'File {file_path} is not a file'
+            if errorstring != '':
+                self.sig_error.emit(file_id, errorstring)
+                raise HEProcessingException()
+
+            # check if a valid notes file already exists, and if so load it
+            need_notes = True
+            notes_path = fileinfo['notes_path']
+            if os.path.isfile(notes_path):
+                notes = HEVideoScanner.read_notes(notes_path)
+                if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
+                    need_notes = False
+                else:
+                    # old version of notes file -> delete and create a new one
+                    self.sig_output.emit(file_id,
+                                         'Notes file is old...deleting\n\n')
+                    os.remove(notes_path)
+
+            if need_notes:
+                scanner = HEVideoScanner(file_path,
+                                         scanvideo=fileinfo['scanvid_path'])
+                notes = scanner.notes
+
+                if self.get_video_metadata(fileinfo, notes) != 0:
+                    raise HEProcessingException()
+                """
+                OpenCV-based alternative for line above:
+                if self.run_scanner(fileinfo, scanner, steps=(1, 1),
+                                    writenotes=False) != 0:
+                    self.sig_error.emit(file_id,
+                                        'Error getting video metadata')
+                    raise HEProcessingException()
+                """
+
+            if not self.abort():
+                # check if the target directory exists, and if not create it
+                hawkeye_dir = fileinfo['hawkeye_dir']
+                if not os.path.exists(hawkeye_dir):
+                    self.sig_output.emit(
+                        file_id, f'Creating directory {hawkeye_dir}\n\n')
+                    os.makedirs(hawkeye_dir)
+                    if not os.path.exists(hawkeye_dir):
+                        self.sig_error.emit(
+                            file_id, f'Error creating directory {hawkeye_dir}')
+                        return
+
+                resolution = self.make_display_video(fileinfo, notes)
+                self.sig_video_done.emit(file_id, fileinfo, resolution, notes,
+                                         resolution >= 0)
+        except HEProcessingException:
+            self.sig_video_done.emit(file_id, fileinfo, 0, notes, False)
+            if analyze:
+                self.sig_analyze_done.emit(file_id, notes, False)
             return
 
-        # check if a valid notes file already exists, and if so load it
-        need_notes = True
-        notes_path = fileinfo['notes_path']
-        if os.path.isfile(notes_path):
-            notes = HEVideoScanner.read_notes(notes_path)
-            if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
-                need_notes = False
-            else:
-                # old version of notes file -> delete and create a new one
-                self.sig_output.emit(file_id,
-                                     'Notes file is old...deleting\n\n')
-                os.remove(notes_path)
+        if analyze and not self.abort():
+            self.on_analyze_juggling(file_id, notes)
 
-        if need_notes and not self.abort():
-            scanner = HEVideoScanner(file_path,
-                                     scanvideo=fileinfo['scanvid_path'])
-            notes = scanner.notes
+    @Slot(str, dict)
+    def on_analyze_juggling(self, file_id: str, notes: dict):
+        """
+        Signaled when the user wants to analyze the juggling in a video. This
+        fills in most of the fields in the `notes` dictionary.
+        """
+        if self.abort():
+            return
 
-            if self.get_video_metadata(fileinfo, notes) != 0:
+        try:
+            need_analysis = (notes['step'] < 6)
+            first_step = notes['step'] + 1
+        except KeyError:
+            need_analysis = True
+            first_step = 1
+
+        if need_analysis:
+            fileinfo = self.make_product_fileinfo(file_id)
+
+            # the following two checks are already done in on_process_video()
+            # but do them again in case the filesystem has changed in the
+            # interim.
+
+            # check if the file exists and is readable
+            file_path = fileinfo['file_path']
+            errorstring = ''
+            if not os.path.exists(file_path):
+                errorstring = f'File {file_path} does not exist'
+            elif not os.path.isfile(file_path):
+                errorstring = f'File {file_path} is not a file'
+            if errorstring != '':
+                self.sig_error.emit(file_id, errorstring)
+                self.sig_analyze_done.emit(file_id, notes, False)
                 return
-            """
-            OpenCV-based alternative for line above:
-            if self.run_scanner(fileinfo, scanner, steps=(1, 1),
-                                writenotes=False) != 0:
-                self.sig_error.emit(file_id, 'Error getting video metadata')
-                return
-            """
 
             # check if the target directory exists, and if not create it
             hawkeye_dir = fileinfo['hawkeye_dir']
@@ -148,25 +217,27 @@ class HEWorker(QObject):
                             file_id, f'Error creating directory {hawkeye_dir}')
                     self.sig_error.emit(
                             file_id, f'Error creating directory {hawkeye_dir}')
+                    self.sig_analyze_done.emit(file_id, notes, False)
                     return
 
-        if not self.abort():
-            resolution = self.make_display_video(fileinfo, notes)
-            self.sig_video_done.emit(file_id, fileinfo, resolution, notes)
-
-        if need_notes and not self.abort():
             if self.make_scan_video(fileinfo) != 0:
+                self.sig_analyze_done.emit(file_id, notes, False)
                 return
-            if self.run_scanner(fileinfo, scanner, steps=(2, 6),
+
+            scanner = HEVideoScanner(file_path,
+                                     scanvideo=fileinfo['scanvid_path'],
+                                     notes=notes)
+            if self.run_scanner(fileinfo, scanner, steps=(first_step, 6),
                                 writenotes=True) != 0:
+                self.sig_analyze_done.emit(file_id, notes, False)
                 return
+
             try:
                 os.remove(fileinfo['scanvid_path'])
             except OSError:
                 pass
 
-        if not self.abort():
-            self.sig_notes_done.emit(file_id, notes)
+        self.sig_analyze_done.emit(file_id, notes, True)
 
     @Slot(str, dict, int)
     def on_extract_clip(self, file_id: str, notes: dict, run_num: int):
@@ -193,7 +264,7 @@ class HEWorker(QObject):
         clip_path = os.path.join(file_dir, clip_basename)
 
         if os.path.isfile(clip_path):
-            self.sig_clipping_done.emit()   # clip already exists
+            self.sig_clipping_done.emit(True)   # clip already exists
             return
 
         # start clip 3 secs before first throw, end 3 secs after last catch
@@ -232,7 +303,7 @@ class HEWorker(QObject):
             if not self.abort():
                 self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
                                         f' with return code {retcode}')
-        self.sig_clipping_done.emit()
+        self.sig_clipping_done.emit(retcode == 0)
 
     def abort(self):
         """
@@ -290,7 +361,7 @@ class HEWorker(QObject):
         variety of input formats, and it reports information not accessible
         through the OpenCV API such as display aspect ratio (DAR).
 
-        Returns 0 on success, nonzero on failure. This must signal sig_error
+        Returns 0 on success, nonzero on failure. This should signal sig_error
         on every nonzero return value that isn't an abort.
         """
         file_id = fileinfo['file_id']
@@ -395,6 +466,7 @@ class HEWorker(QObject):
             notes['frame_width'] = width
             notes['frame_height'] = height
             notes['frame_count_estimate'] = framecount
+            notes['step'] = 1
 
             return 0
         except subprocess.SubprocessError as err:
@@ -424,9 +496,13 @@ class HEWorker(QObject):
            to a maximum value, in which case we want to rescale.
         3. The video player on Windows gives an error when it loads a video
            with no audio track. Fix this by adding a null audio track.
-        4. FFmpeg reads far more video formats/codecs than QMediaPlayer, so
+        4. FFmpeg reads more video formats/codecs than QMediaPlayer, so
            transcoding into standard H.264/mp4 allows us to be compatible with
-           a much wider range of source video formats.
+           a wider range of source video formats.
+
+        Returns the resolution of the transcoded video (vertical scanlines, or
+        if 0 then identical to the source video). Return value of -1 indicates
+        failure.
         """
         file_id = fileinfo['file_id']
         file_path = fileinfo['file_path']
@@ -486,6 +562,7 @@ class HEWorker(QObject):
                 self.sig_error.emit(
                         file_id, 'Error converting video {}'.format(
                                      fileinfo['file_basename']))
+            return -1
 
         return displayvid_resolution
 
@@ -696,6 +773,13 @@ class HEOutputHandler(io.StringIO):
     def write(self, s: str):
         if self._callback is not None:
             self._callback(s)
+
+# -----------------------------------------------------------------------------
+
+
+class HEProcessingException(Exception):
+    def __init__(self, message=None):
+        super().__init__(message)
 
 # -----------------------------------------------------------------------------
 

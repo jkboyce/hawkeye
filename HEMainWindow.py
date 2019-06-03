@@ -17,7 +17,8 @@ from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QSplitter, QStackedWidget, QPlainTextEdit,
                                QProgressBar, QMainWindow, QAction, QComboBox,
                                QAbstractItemView, QToolButton, QCheckBox,
-                               QTableWidget, QTableWidgetItem, QMessageBox)
+                               QTableWidget, QTableWidgetItem, QMessageBox,
+                               QSpacerItem)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer, QSoundEffect
 
 from HEWorker import HEWorker
@@ -29,13 +30,17 @@ class HEMainWindow(QMainWindow):
     """
     The main application window.
     """
-    CURRENT_APP_VERSION = "1.1"
+    CURRENT_APP_VERSION = "1.2"
 
     # signal that informs worker of new display preferences
     sig_new_prefs = Signal(dict)
 
-    # signal that informs worker of a new video to process
-    sig_process_video = Signal(str)
+    # signal that informs worker to transcode a video, and optionally
+    # analyze juggling
+    sig_process_video = Signal(str, bool)
+
+    # signal that informs worker to analyze a video for juggling content
+    sig_analyze_juggling = Signal(str, dict)
 
     # signal that informs worker to extract a clip from a video
     sig_extract_clip = Signal(str, dict, int)
@@ -62,7 +67,8 @@ class HEMainWindow(QMainWindow):
             'accuracy_overlay': True,
             'body': False,
             'throw_sounds': False,
-            'resolution': 'Actual size'
+            'resolution': 'Actual size',
+            'auto_analyze': True
         }
 
         # Media player on Mac OS bogs down on videos at 1080p resolution,
@@ -293,6 +299,9 @@ class HEMainWindow(QMainWindow):
         self.prefs_resolution.setEditable(False)
         resolution_layout.addWidget(self.prefs_resolution)
 
+        self.prefs_autoanalyze = QCheckBox(
+            'Automatically analyze added videos for juggling')
+
         controls_layout = QVBoxLayout()
         controls_layout.setContentsMargins(10, 0, 30, 0)
         controls_layout.setAlignment(Qt.AlignVCenter)
@@ -306,6 +315,9 @@ class HEMainWindow(QMainWindow):
         controls_layout.addWidget(self.prefs_body)
         controls_layout.addWidget(self.prefs_sounds)
         controls_layout.addLayout(resolution_layout)
+        controls_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding,
+                                            QSizePolicy.Minimum))
+        controls_layout.addWidget(self.prefs_autoanalyze)
         controls_widget = QWidget()
         controls_widget.setLayout(controls_layout)
         controls_widget.setSizePolicy(QSizePolicy.Preferred,
@@ -402,13 +414,14 @@ class HEMainWindow(QMainWindow):
                '<p>Useful keyboard shortcuts when viewing video:</p>'
                '<ul>'
                '<li>space: toggle play/pause</li>'
-               '<li>left/right: step backward/forward by one frame '
+               '<li>left/right arrows: step backward/forward by one frame '
                '(hold to continue cueing)</li>'
                '<li>z, x: step backward/forward by one throw</li>'
                '<li>a, s: step backward/forward by one run</li>'
-               '<li>down: toggle all overlays/sounds</li>'
-               '<li>up: toggle accuracy-related overlays</li>'
+               '<li>down arrow: toggle all overlays/sounds</li>'
+               '<li>up arrow: toggle accuracy-related overlays</li>'
                '<li>k: save video clip of current run</li>'
+               '<li>p: process video to analyze for juggling</li>'
                '</ul>'
                '<p>&nbsp;</p>'
                '<p><small>All portions of this software written by Jack Boyce '
@@ -482,6 +495,23 @@ class HEMainWindow(QMainWindow):
 
         For data consistency all communication with the worker is done via Qt
         signals and slots.
+
+        There are four task types we can send to the worker:
+            1) notify of new app preferences
+            2) transcode a video to create a display version
+            3) analyze a video for juggling content
+            4) extract a clip of a given run and save as a separate video
+        When a new video is added, we signal the worker thread to do 2) and
+        (depending on prefs) may also signal 3).
+
+        Communication protocol with worker:
+            - Worker signals on_worker_output() with any textual output
+            - Worker signals on_worker_step() to indicate degree of completion
+            - Worker signals on_worker_error() in the event of any error
+              condition
+            - Worker signals on_worker_***_done() at the end of successful
+              task completion; if the task was not successful, or the app was
+              aborted, this is not signalled
         """
         self._worker = worker = HEWorker(self.app)
         self._thread = thread = QThread()
@@ -490,14 +520,15 @@ class HEMainWindow(QMainWindow):
         # signals from UI thread to worker
         self.sig_new_prefs.connect(worker.on_new_prefs)
         self.sig_process_video.connect(worker.on_process_video)
+        self.sig_analyze_juggling.connect(worker.on_analyze_juggling)
         self.sig_extract_clip.connect(worker.on_extract_clip)
 
         # signals from worker back to UI thread
-        worker.sig_progress.connect(self.on_worker_step)
         worker.sig_output.connect(self.on_worker_output)
+        worker.sig_progress.connect(self.on_worker_step)
         worker.sig_error.connect(self.on_worker_error)
         worker.sig_video_done.connect(self.on_worker_displayvid_done)
-        worker.sig_notes_done.connect(self.on_worker_notes_done)
+        worker.sig_analyze_done.connect(self.on_worker_analyze_done)
         worker.sig_clipping_done.connect(self.on_worker_clipping_done)
 
         # have worker thread clean up worker object on close; otherwise we
@@ -511,25 +542,6 @@ class HEMainWindow(QMainWindow):
         self.worker_processing_queue_length = 0
         self.worker_clipping_queue_length = 0
         self.setWorkerBusyIcon()
-
-    @Slot(str, int, int)
-    def on_worker_step(self, file_id: str, step: int, stepstotal: int):
-        """
-        Signaled by worker when there is a progress update on processing
-        a video.
-        """
-        for i in range(0, self.videoList.count()):
-            item = self.videoList.item(i)
-            if item is None:
-                continue
-            if item.vc.filepath == file_id:
-                if item.vc.doneprocessing is False:
-                    item.vc.processing_step = step
-                    item.vc.processing_steps_total = stepstotal
-                    if item is self.currentVideoItem:
-                        self.progressBar.setValue(step)
-                        self.progressBar.setMaximum(stepstotal)
-                break
 
     @Slot(str, str)
     def on_worker_output(self, file_id: str, output: str):
@@ -549,6 +561,24 @@ class HEMainWindow(QMainWindow):
                     self.outputWidget.moveCursor(QTextCursor.End)
                 break
 
+    @Slot(str, int, int)
+    def on_worker_step(self, file_id: str, step: int, stepstotal: int):
+        """
+        Signaled by worker when there is a progress update on processing
+        a video.
+        """
+        for i in range(0, self.videoList.count()):
+            item = self.videoList.item(i)
+            if item is None:
+                continue
+            if item.vc.filepath == file_id:
+                item.vc.processing_step = step
+                item.vc.processing_steps_total = stepstotal
+                if item is self.currentVideoItem:
+                    self.progressBar.setValue(step)
+                    self.progressBar.setMaximum(stepstotal)
+                break
+
     @Slot(str, str)
     def on_worker_error(self, file_id: str, errormsg: str):
         """
@@ -563,24 +593,18 @@ class HEMainWindow(QMainWindow):
                 if item is None:
                     continue
                 if item.vc.filepath == file_id:
-                    if item.vc.doneprocessing is False:
-                        # only do these steps on the first error for the item
-                        self.worker_processing_queue_length -= 1
-                        self.setWorkerBusyIcon()
-                        item.vc.notes = None
-                        item.vc.doneprocessing = True
-                        item.setForeground(item.foreground)
-                        if item is self.currentVideoItem:
-                            self.buildViewList(item)
-                            self.progressBar.hide()
+                    if item.vc.error is None:
+                        item.vc.error = errormsg
+                    else:
+                        item.vc.error += "\n" + errormsg
                     break
         else:
             QMessageBox.warning(self, 'Oops, we encountered a problem.',
                                 errormsg, QMessageBox.Ok, QMessageBox.Ok)
 
-    @Slot(str, dict, int, dict)
+    @Slot(str, dict, int, dict, bool)
     def on_worker_displayvid_done(self, file_id: str, fileinfo: dict,
-                                  resolution: int, notes: dict):
+                                  resolution: int, notes: dict, success: bool):
         """
         Signaled by worker when the transcoded display version of the video is
         completed. This will always come before video notes completion below.
@@ -590,9 +614,14 @@ class HEMainWindow(QMainWindow):
             if item is None:
                 continue
             if item.vc.filepath == file_id:
-                if item.vc.doneprocessing is False:
-                    # only do these steps once, and only if there was not
-                    # previously an error
+                if not item.vc.analyze_on_add:
+                    # no subsequent analysis step queued up
+                    item.vc.doneprocessing = True
+                    self.worker_processing_queue_length -= 1
+                    self.setWorkerBusyIcon()
+                    item.setForeground(item.foreground)
+
+                if success:
                     item.vc.videopath = fileinfo['displayvid_path']
                     item.vc.videoresolution = resolution
                     item.vc.csvpath = fileinfo['csvfile_path']
@@ -645,28 +674,29 @@ class HEMainWindow(QMainWindow):
                         self.positionSlider.setValue(0)
                         self.positionSlider.blockSignals(prev)
                         self.buildViewList(item)
+                        if not item.vc.analyze_on_add:
+                            # switch to movie view
+                            self.views_stackedWidget.setCurrentIndex(0)
 
                 break
 
-    @Slot(str, dict)
-    def on_worker_notes_done(self, file_id: str, notes: dict):
+    @Slot(str, dict, bool)
+    def on_worker_analyze_done(self, file_id: str, notes: dict, success: bool):
         """
-        Signaled by worker when notes for the video is completed. This will
-        always come after the display video completion.
+        Signaled by worker when analyzing the video for juggling content is
+        completed. This will always come after the display video completion.
         """
         for i in range(self.videoList.count()):
             item = self.videoList.item(i)
             if item is None:
                 continue
             if item.vc.filepath == file_id:
-                if item.vc.doneprocessing is False:
-                    # only do these steps once, and only if there was not
-                    # previously an error
-                    self.worker_processing_queue_length -= 1
-                    self.setWorkerBusyIcon()
-                    item.setForeground(item.foreground)
+                item.vc.doneprocessing = True
+                self.worker_processing_queue_length -= 1
+                self.setWorkerBusyIcon()
+                item.setForeground(item.foreground)
 
-                    item.vc.doneprocessing = True
+                if success:
                     item.vc.notes = notes
                     # recalculate duration in case actual frame count is
                     # different from estimated frame count
@@ -698,8 +728,8 @@ class HEMainWindow(QMainWindow):
 
                 break
 
-    @Slot()
-    def on_worker_clipping_done(self):
+    @Slot(bool)
+    def on_worker_clipping_done(self, success: bool):
         self.worker_clipping_queue_length -= 1
         self.setWorkerBusyIcon()
 
@@ -786,21 +816,18 @@ class HEMainWindow(QMainWindow):
         notes = videoitem.vc.notes
         self.viewList.clear()
 
-        if (not videoitem.vc.doneprocessing
-                and videoitem.vc.videopath is not None):
-            # display video is ready but notes processing still underway
-            headeritem = QListWidgetItem('')
-            headeritem._type = 'video'
-            headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
-            header = QLabel('Video')
-            self.viewList.addItem(headeritem)
-            self.viewList.setItemWidget(headeritem, header)
+        have_video = videoitem.vc.videopath is not None
+        did_analysis = (notes is not None and 'step' in notes
+                        and notes['step'] >= 6)
+        have_runs = (notes is not None and 'runs' in notes
+                     and notes['runs'] > 0)
 
-        if videoitem.vc.doneprocessing and notes is not None:
-            if notes['runs'] > 0:
+        if did_analysis:
+            if have_runs:
                 headeritem = QListWidgetItem('')
                 headeritem._type = 'blank'
-                headeritem.setFlags(headeritem.flags() & ~Qt.ItemIsSelectable)
+                headeritem.setFlags(headeritem.flags()
+                                    & ~Qt.ItemIsSelectable)
                 header = QLabel('Run #, Balls, Throws')
                 self.viewList.addItem(headeritem)
                 self.viewList.setItemWidget(headeritem, header)
@@ -820,7 +847,8 @@ class HEMainWindow(QMainWindow):
                     else:
                         endframe = notes['frame_count']
                     runitem._endframe = endframe
-                    runitem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
+                    runitem.setFlags(headeritem.flags()
+                                     | Qt.ItemIsSelectable)
                     run = QLabel('{}, {}, {}'. format(i + 1,
                                                       run_dict['balls'],
                                                       run_dict['throws']))
@@ -829,7 +857,8 @@ class HEMainWindow(QMainWindow):
             else:
                 headeritem = QListWidgetItem('')
                 headeritem._type = 'blank'
-                headeritem.setFlags(headeritem.flags() & ~Qt.ItemIsSelectable)
+                headeritem.setFlags(headeritem.flags()
+                                    & ~Qt.ItemIsSelectable)
                 header = QLabel('(no runs detected)')
                 self.viewList.addItem(headeritem)
                 self.viewList.setItemWidget(headeritem, header)
@@ -839,6 +868,7 @@ class HEMainWindow(QMainWindow):
             headeritem.setFlags(headeritem.flags() & ~Qt.ItemIsSelectable)
             self.viewList.addItem(headeritem)
 
+        if have_video:
             headeritem = QListWidgetItem('')
             headeritem._type = 'video'
             headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
@@ -846,6 +876,7 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
+        if have_runs:
             headeritem = QListWidgetItem('')
             headeritem._type = 'data'
             headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
@@ -1065,6 +1096,7 @@ class HEMainWindow(QMainWindow):
         self.prefs_body.setChecked(self.prefs['body'])
         self.prefs_sounds.setChecked(self.prefs['throw_sounds'])
         self.prefs_resolution.setCurrentText(self.prefs['resolution'])
+        self.prefs_autoanalyze.setChecked(self.prefs['auto_analyze'])
         self.player_stackedWidget.setCurrentIndex(1)
 
     @Slot()
@@ -1083,6 +1115,7 @@ class HEMainWindow(QMainWindow):
         self.prefs['body'] = self.prefs_body.isChecked()
         self.prefs['throw_sounds'] = self.prefs_sounds.isChecked()
         self.prefs['resolution'] = self.prefs_resolution.currentText()
+        self.prefs['auto_analyze'] = self.prefs_autoanalyze.isChecked()
         self.sig_new_prefs.emit(self.prefs)
         self.player_stackedWidget.setCurrentIndex(0)
 
@@ -1091,7 +1124,8 @@ class HEMainWindow(QMainWindow):
         if self.prefs['resolution'] != old_resolution:
             if self.currentVideoItem is not None:
                 self.currentVideoItem.vc.doneprocessing = False
-                self.sig_process_video.emit(self.currentVideoItem.vc.filepath)
+                self.sig_process_video.emit(self.currentVideoItem.vc.filepath,
+                                            False)
                 self.worker_processing_queue_length += 1
 
                 # auto-select 'scanner output' view
@@ -1105,7 +1139,7 @@ class HEMainWindow(QMainWindow):
                 item = self.videoList.item(i)
                 if item is not None and item is not self.currentVideoItem:
                     item.vc.doneprocessing = False
-                    self.sig_process_video.emit(item.vc.filepath)
+                    self.sig_process_video.emit(item.vc.filepath, False)
                     self.worker_processing_queue_length += 1
 
             self.setWorkerBusyIcon()
@@ -1427,6 +1461,20 @@ class HEMainWindow(QMainWindow):
                     self.worker_clipping_queue_length += 1
                     self.setWorkerBusyIcon()
                     break
+        elif key == Qt.Key_P and notes is not None:
+            if 'step' not in notes or notes['step'] < 6:
+                vc.doneprocessing = False
+                self.sig_analyze_juggling.emit(vc.filepath, notes)
+                self.worker_processing_queue_length += 1
+                self.setWorkerBusyIcon()
+                self.currentVideoItem.setForeground(Qt.gray)
+                self.buildViewList(self.currentVideoItem)
+                # switch to 'scanner output' view
+                for i in range(self.viewList.count()):
+                    viewitem = self.viewList.item(i)
+                    if viewitem._type == 'output':
+                        viewitem.setSelected(True)
+                        break
         elif key == Qt.Key_X and notes is not None:
             # play forward until next throw in run
             if 'arcs' not in notes or 'run' not in notes:

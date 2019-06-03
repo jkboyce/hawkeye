@@ -198,7 +198,7 @@ class HEVideoView(QGraphicsView):
 
                     fs, fe = notes['run'][run_id - 1]['frame range']
                     if framenum < fs:
-                        # so we can see accuracy overlay before run starts: 
+                        # so we can see accuracy overlay before run starts:
                         notes_framenum = next(frame for frame
                                               in range(round(fs), round(fe))
                                               if frame in notes['origin'])
@@ -245,7 +245,7 @@ class HEVideoView(QGraphicsView):
                 arc_px_px, arc_py_px = arc.get_position(arc.f_peak, notes)
 
                 arc_origin_x_px, arc_origin_y_px = \
-                        notes['origin'][round(arc.f_peak)]
+                    notes['origin'][round(arc.f_peak)]
 
                 if arc.hand_throw == 'right':
                     peaks_x = peaks_right_x
@@ -659,7 +659,7 @@ class HEVideoList(QListWidget):
         self.addItem(item)
 
         # signal worker to process the video
-        self.window.sig_process_video.emit(filepath)
+        self.window.sig_process_video.emit(filepath, item.vc.analyze_on_add)
         self.window.worker_processing_queue_length += 1
         self.window.setWorkerBusyIcon()
         return item
@@ -703,7 +703,7 @@ class HEVideoContext(QObject):
         super().__init__(parent=main_window)
         self.window = main_window
 
-        self.player = QMediaPlayer(parent=main_window,
+        self.player = QMediaPlayer(parent=self.window,
                                    flags=QMediaPlayer.VideoSurface)
         self.player.stateChanged.connect(self.mediaStateChanged)
         self.player.error.connect(self.handlePlayerError)
@@ -730,6 +730,8 @@ class HEVideoContext(QObject):
         self.has_played = False         # see note in HEMainWindow.playMovie()
         self.map = None         # see HEMainWindow.on_worker_displayvid_done()
         self.overlays = True            # whether to draw video overlays
+        self.error = None               # any error string(s) reported
+        self.analyze_on_add = self.window.prefs['auto_analyze']
 
     def mediaStateChanged(self, state):
         """

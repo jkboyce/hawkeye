@@ -113,7 +113,7 @@ class HEVideoScanner:
 
     CURRENT_NOTES_VERSION = 4
 
-    def __init__(self, filename, scanvideo=None, params=None):
+    def __init__(self, filename, scanvideo=None, params=None, notes=None):
         """
         Initialize the video scanner. This doesn't do any actual processing;
         see the process() method.
@@ -132,17 +132,23 @@ class HEVideoScanner:
                 Parameters to configure the scanner. The function
                 HEVideoScanner.defaultScannerParams() returns a dict of the
                 expected format.
+            notes(dict, optional):
+                Notes dictionary for recording data into
         Returns:
             None
         """
-        self.notes = dict()
-        self.notes['version'] = HEVideoScanner.CURRENT_NOTES_VERSION
-        self.notes['source'] = os.path.abspath(filename)
-        self.notes['scanvideo'] = (os.path.abspath(scanvideo)
-                                   if scanvideo is not None else None)
-        self.notes['scanner_params'] = (HEVideoScanner.defaultScannerParams()
-                                        if params is None else params)
-        self.notes['step'] = 0
+        if notes is None:
+            self.notes = dict()
+            self.notes['version'] = HEVideoScanner.CURRENT_NOTES_VERSION
+            self.notes['source'] = os.path.abspath(filename)
+            self.notes['scanvideo'] = (os.path.abspath(scanvideo)
+                                       if scanvideo is not None else None)
+            self.notes['scanner_params'] = (
+                    HEVideoScanner.defaultScannerParams()
+                    if params is None else params)
+            self.notes['step'] = 0
+        else:
+            self.notes = notes
 
     def process(self, steps=(1, 6), readnotes=False, writenotes=False,
                 notesdir=None, callback=None, verbosity=0):
