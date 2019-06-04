@@ -91,7 +91,7 @@ class HEWorker(QObject):
         else:
             self._resolution = int(prefs['resolution'])
 
-    @Slot(str)
+    @Slot(str, bool)
     def on_process_video(self, file_id: str, analyze: bool):
         """
         Signaled when the worker should process a video to make the version
@@ -180,6 +180,9 @@ class HEWorker(QObject):
         if self.abort():
             return
 
+        # UI_thread = (QThread.currentThread() == self._app.thread())
+        # print(f'starting analysis..., UI thread = {UI_thread}')
+
         try:
             need_analysis = (notes['step'] < 6)
             first_step = notes['step'] + 1
@@ -249,6 +252,9 @@ class HEWorker(QObject):
         """
         if self.abort():
             return
+
+        # UI_thread = (QThread.currentThread() == self._app.thread())
+        # print(f'starting clipping..., UI thread = {UI_thread}')
 
         run_dict = notes['run'][run_num]
         balls = run_dict['balls']

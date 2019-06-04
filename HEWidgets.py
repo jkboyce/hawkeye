@@ -126,7 +126,7 @@ class HEVideoView(QGraphicsView):
         if not vc.overlays:
             return
         notes = vc.notes
-        if notes is None or notes['step'] < 5:
+        if notes is None or 'step' not in notes or notes['step'] < 6:
             return
 
         # the following is a hack to solve the way QMediaPlayer on Windows
