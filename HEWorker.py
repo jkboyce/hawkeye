@@ -71,7 +71,7 @@ class HEWorker(QObject):
 
     # signal that video clipping task is done
     #    arg1(bool) = successful completion
-    sig_clipping_done = Signal(bool)
+    sig_clipping_done = Signal(str, bool)
 
     def __init__(self, app=None):
         super().__init__()
@@ -193,52 +193,50 @@ class HEWorker(QObject):
         if need_analysis:
             fileinfo = self.make_product_fileinfo(file_id)
 
-            # the following two checks are already done in on_process_video()
-            # but do them again in case the filesystem has changed in the
-            # interim.
+            try:
+                # the following two checks are already done in
+                # on_process_video() but do them again in case the filesystem
+                # has changed in the interim.
 
-            # check if the file exists and is readable
-            file_path = fileinfo['file_path']
-            errorstring = ''
-            if not os.path.exists(file_path):
-                errorstring = f'File {file_path} does not exist'
-            elif not os.path.isfile(file_path):
-                errorstring = f'File {file_path} is not a file'
-            if errorstring != '':
-                self.sig_error.emit(file_id, errorstring)
-                self.sig_analyze_done.emit(file_id, notes, False)
-                return
+                # check if the file exists and is readable
+                file_path = fileinfo['file_path']
+                errorstring = ''
+                if not os.path.exists(file_path):
+                    errorstring = f'File {file_path} does not exist'
+                elif not os.path.isfile(file_path):
+                    errorstring = f'File {file_path} is not a file'
+                if errorstring != '':
+                    self.sig_error.emit(file_id, errorstring)
+                    raise HEProcessingException()
 
-            # check if the target directory exists, and if not create it
-            hawkeye_dir = fileinfo['hawkeye_dir']
-            if not os.path.exists(hawkeye_dir):
-                self.sig_output.emit(file_id,
-                                     f'Creating directory {hawkeye_dir}\n\n')
-                os.makedirs(hawkeye_dir)
+                # check if the target directory exists, and if not create it
+                hawkeye_dir = fileinfo['hawkeye_dir']
                 if not os.path.exists(hawkeye_dir):
                     self.sig_output.emit(
+                        file_id, f'Creating directory {hawkeye_dir}\n\n')
+                    os.makedirs(hawkeye_dir)
+                    if not os.path.exists(hawkeye_dir):
+                        self.sig_error.emit(
                             file_id, f'Error creating directory {hawkeye_dir}')
-                    self.sig_error.emit(
-                            file_id, f'Error creating directory {hawkeye_dir}')
-                    self.sig_analyze_done.emit(file_id, notes, False)
-                    return
+                        raise HEProcessingException()
 
-            if self.make_scan_video(fileinfo) != 0:
+                if self.make_scan_video(fileinfo) != 0:
+                    raise HEProcessingException()
+
+                scanner = HEVideoScanner(file_path,
+                                         scanvideo=fileinfo['scanvid_path'],
+                                         notes=notes)
+                if self.run_scanner(fileinfo, scanner, steps=(first_step, 6),
+                                    writenotes=True) != 0:
+                    raise HEProcessingException()
+
+                try:
+                    os.remove(fileinfo['scanvid_path'])
+                except OSError:
+                    pass
+            except HEProcessingException:
                 self.sig_analyze_done.emit(file_id, notes, False)
                 return
-
-            scanner = HEVideoScanner(file_path,
-                                     scanvideo=fileinfo['scanvid_path'],
-                                     notes=notes)
-            if self.run_scanner(fileinfo, scanner, steps=(first_step, 6),
-                                writenotes=True) != 0:
-                self.sig_analyze_done.emit(file_id, notes, False)
-                return
-
-            try:
-                os.remove(fileinfo['scanvid_path'])
-            except OSError:
-                pass
 
         self.sig_analyze_done.emit(file_id, notes, True)
 
@@ -252,9 +250,6 @@ class HEWorker(QObject):
         """
         if self.abort():
             return
-
-        # UI_thread = (QThread.currentThread() == self._app.thread())
-        # print(f'starting clipping..., UI thread = {UI_thread}')
 
         run_dict = notes['run'][run_num]
         balls = run_dict['balls']
@@ -270,7 +265,7 @@ class HEWorker(QObject):
         clip_path = os.path.join(file_dir, clip_basename)
 
         if os.path.isfile(clip_path):
-            self.sig_clipping_done.emit(True)   # clip already exists
+            self.sig_clipping_done.emit(file_id, True)   # clip already exists
             return
 
         # start clip 3 secs before first throw, end 3 secs after last catch
@@ -307,9 +302,9 @@ class HEWorker(QObject):
             except OSError:
                 pass
             if not self.abort():
-                self.sig_error.emit('', 'Error saving clip: FFmpeg failed'
-                                        f' with return code {retcode}')
-        self.sig_clipping_done.emit(retcode == 0)
+                self.sig_error.emit(file_id, 'Error saving clip: FFmpeg failed'
+                                             f' with return code {retcode}')
+        self.sig_clipping_done.emit(file_id, retcode == 0)
 
     def abort(self):
         """

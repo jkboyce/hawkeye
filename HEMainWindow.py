@@ -411,7 +411,7 @@ class HEMainWindow(QMainWindow):
                'rate (60+ fps), minimum motion blur, and good brightness '
                'separation between the balls and background.</p>'
                '<p>Drop a video file onto the <b>Videos:</b> box to begin!</p>'
-               '<p>Useful keyboard shortcuts when viewing video:</p>'
+               '<p>Useful keyboard shortcuts in video view:</p>'
                '<ul>'
                '<li>space: toggle play/pause</li>'
                '<li>left/right arrows: step backward/forward by one frame '
@@ -676,7 +676,11 @@ class HEMainWindow(QMainWindow):
                         if not item.vc.analyze_on_add:
                             # switch to movie view
                             self.views_stackedWidget.setCurrentIndex(0)
-
+                elif not item.vc.analyze_on_add:
+                    if item is self.currentVideoItem:
+                        self.progressBar.hide()
+                        self.buildViewList(item)
+                    self.showWorkerErrors(item)
                 break
 
     @Slot(str, dict, bool)
@@ -693,7 +697,6 @@ class HEMainWindow(QMainWindow):
                 item.vc.doneprocessing = True
                 self.worker_processing_queue_length -= 1
                 self.setWorkerBusyIcon()
-                item.setForeground(item.foreground)
 
                 if success:
                     item.vc.notes = notes
@@ -725,12 +728,49 @@ class HEMainWindow(QMainWindow):
                         # switch to movie view
                         self.views_stackedWidget.setCurrentIndex(0)
 
+                    item.setForeground(item.foreground)
+                else:
+                    if item is self.currentVideoItem:
+                        self.progressBar.hide()
+                        self.buildViewList(item)
+                    self.showWorkerErrors(item)
                 break
 
-    @Slot(bool)
-    def on_worker_clipping_done(self, success: bool):
+    @Slot(str, bool)
+    def on_worker_clipping_done(self, file_id: str, success: bool):
         self.worker_clipping_queue_length -= 1
         self.setWorkerBusyIcon()
+
+        for i in range(self.videoList.count()):
+            item = self.videoList.item(i)
+            if item is None:
+                continue
+            if item.vc.filepath == file_id:
+                if success:
+                    item.setForeground(item.foreground)
+                else:
+                    self.showWorkerErrors(item)
+                break
+
+    def showWorkerErrors(self, videoitem):
+        """
+        Show in the scanner output window any error strings that were returned
+        from processing.
+        """
+        videoitem.setForeground(Qt.red)   
+
+        output = '\n\n##### An error occurred while processing video #####\n'
+        if videoitem.vc.error is not None:
+            output += videoitem.vc.error
+        self.on_worker_output(videoitem.vc.filepath, output)                    
+
+        if videoitem is self.currentVideoItem:
+            # switch to 'scanner output' view
+            for i in range(self.viewList.count()):
+                viewitem = self.viewList.item(i)
+                if viewitem._type == 'output':
+                    viewitem.setSelected(True)
+                    break
 
     def isWorkerBusy(self):
         """
@@ -883,13 +923,12 @@ class HEMainWindow(QMainWindow):
             self.viewList.addItem(headeritem)
             self.viewList.setItemWidget(headeritem, header)
 
-        if not (videoitem.vc.doneprocessing and len(videoitem.vc.output) == 0):
-            headeritem = QListWidgetItem('')
-            headeritem._type = 'output'
-            headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
-            header = QLabel('Scanner output')
-            self.viewList.addItem(headeritem)
-            self.viewList.setItemWidget(headeritem, header)
+        headeritem = QListWidgetItem('')
+        headeritem._type = 'output'
+        headeritem.setFlags(headeritem.flags() | Qt.ItemIsSelectable)
+        header = QLabel('Scanner output')
+        self.viewList.addItem(headeritem)
+        self.viewList.setItemWidget(headeritem, header)
 
         if not videoitem.vc.doneprocessing:
             headeritem = QListWidgetItem('')
@@ -1461,6 +1500,7 @@ class HEMainWindow(QMainWindow):
                     self.setWorkerBusyIcon()
                     break
         elif key == Qt.Key_P and notes is not None:
+            # process current video to analyze juggling content
             if 'step' not in notes or notes['step'] < 6:
                 vc.doneprocessing = False
                 self.sig_analyze_juggling.emit(vc.filepath, notes)
