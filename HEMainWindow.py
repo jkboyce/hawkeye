@@ -509,9 +509,8 @@ class HEMainWindow(QMainWindow):
             - Worker signals on_worker_step() to indicate degree of completion
             - Worker signals on_worker_error() in the event of any error
               condition
-            - Worker signals on_worker_***_done() at the end of successful
-              task completion; if the task was not successful, or the app was
-              aborted, this is not signalled
+            - Worker signals on_worker_***_done() when the task is completed,
+              including a return code to indicate success or failure
         """
         self._worker = worker = HEWorker(self.app)
         self._thread = thread = QThread()
