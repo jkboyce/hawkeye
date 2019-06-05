@@ -45,7 +45,7 @@ class HEVideoScanner:
     notes['scanvideo']:
         full path to scanned video, or None if identical to source video (str)
     notes['scanner_params']:
-        parameters to configure the scanner; see defaultScannerParams() for
+        parameters to configure the scanner; see default_scanner_params() for
         format (dict)
     notes['fps']:
         source video frames per second (float)
@@ -130,7 +130,7 @@ class HEVideoScanner:
                 coordinates to the original.
             params(dict, optional):
                 Parameters to configure the scanner. The function
-                HEVideoScanner.defaultScannerParams() returns a dict of the
+                HEVideoScanner.default_scanner_params() returns a dict of the
                 expected format.
             notes(dict, optional):
                 Notes dictionary for recording data into
@@ -144,7 +144,7 @@ class HEVideoScanner:
             self.notes['scanvideo'] = (os.path.abspath(scanvideo)
                                        if scanvideo is not None else None)
             self.notes['scanner_params'] = (
-                    HEVideoScanner.defaultScannerParams()
+                    HEVideoScanner.default_scanner_params()
                     if params is None else params)
             self.notes['step'] = 0
         else:
@@ -2426,7 +2426,7 @@ class HEVideoScanner:
     #  Non-member functions
     # --------------------------------------------------------------------------
 
-    def defaultScannerParams():
+    def default_scanner_params():
         """
         Returns a dictionary with constants that configure Hawkeye's video
         scanner. Optionally you can pass a dictionary of this type to the

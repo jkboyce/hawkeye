@@ -45,76 +45,76 @@ class HEVideoView(QGraphicsView):
         (at the rate specified in the pulldown control), and "fast stepping"
         mode. Fast stepping is done by pausing regular playback and manually
         advancing forward or backward through successive frames with
-        setFramenum(). This allows allows us to cue forward or backward to a
+        set_framenum(). This allows allows us to cue forward or backward to a
         precise frame number.
         """
         win = self.window
-        vc = self.window.currentVideoItem.vc
+        vc = self.window.current_video_item.vc
 
         # record position in movie
         vc.position = vc.player.position()
 
         # update position of slider, and block signals so we don't trigger
-        # a call to HEMainWindow.setPosition()
-        prev = win.positionSlider.blockSignals(True)
-        win.positionSlider.setValue(vc.position)
-        win.positionSlider.blockSignals(prev)
+        # a call to HEMainWindow.set_position()
+        prev = win.position_slider.blockSignals(True)
+        win.position_slider.setValue(vc.position)
+        win.position_slider.blockSignals(prev)
 
         # check if we're at the beginning or end of the video and adjust
         # UI elements as appropriate
         if framenum == 0:
-            win.backButton.setEnabled(False)
+            win.back_button.setEnabled(False)
         elif (framenum >= vc.frames - 1):
-            win.pauseMovie()
+            win.pause_movie()
             if framenum != vc.frames - 1:
-                win.setFramenum(vc.frames - 1)
+                win.set_framenum(vc.frames - 1)
             framenum = vc.frames - 1
-            win.backButton.setEnabled(vc.has_played)
-            win.forwardButton.setEnabled(False)
-            win.playButton.setEnabled(False)
+            win.back_button.setEnabled(vc.has_played)
+            win.forward_button.setEnabled(False)
+            win.play_button.setEnabled(False)
         else:
             can_step = (vc.player.state() != QMediaPlayer.PlayingState
                         and vc.has_played)
-            win.backButton.setEnabled(can_step)
-            win.forwardButton.setEnabled(can_step)
-            win.playButton.setEnabled(True)
+            win.back_button.setEnabled(can_step)
+            win.forward_button.setEnabled(can_step)
+            win.play_button.setEnabled(True)
 
         # keep selected run in viewlist synchronized with position in video
-        for i in range(win.viewList.count()):
-            viewitem = win.viewList.item(i)
+        for i in range(win.view_list.count()):
+            viewitem = win.view_list.item(i)
             if (viewitem._type == 'run' and
                     (viewitem._startframe <= framenum < viewitem._endframe or
                      (viewitem._runindex == 0 and
                       framenum < viewitem._startframe))):
                 if not viewitem.isSelected():
-                    prev = win.viewList.blockSignals(True)
-                    win.viewList.setCurrentRow(i)
-                    win.viewList.blockSignals(prev)
-                    win.currentViewItem = viewitem
+                    prev = win.view_list.blockSignals(True)
+                    win.view_list.setCurrentRow(i)
+                    win.view_list.blockSignals(prev)
+                    win.current_view_item = viewitem
                     break
 
         # if we're in fast-stepping mode, ensure we respect the frame limits
         # and also check if we've hit the end of the range we're stepping
         # through.
-        if win.stepForwardUntil is not None:
-            win.stepForwardUntil = min(win.stepForwardUntil, vc.frames - 1)
-            if framenum >= win.stepForwardUntil:
-                if framenum > win.stepForwardUntil:
+        if win.step_forward_until is not None:
+            win.step_forward_until = min(win.step_forward_until, vc.frames - 1)
+            if framenum >= win.step_forward_until:
+                if framenum > win.step_forward_until:
                     # shouldn't happen, but just in case
-                    win.setFramenum(win.stepForwardUntil)
-                win.stepForwardUntil = None
-        if win.stepBackwardUntil is not None:
-            win.stepBackwardUntil = max(win.stepBackwardUntil, 0)
-            if framenum <= win.stepBackwardUntil:
-                if framenum < win.stepBackwardUntil:
-                    win.setFramenum(win.stepBackwardUntil)
-                win.stepBackwardUntil = None
+                    win.set_framenum(win.step_forward_until)
+                win.step_forward_until = None
+        if win.step_backward_until is not None:
+            win.step_backward_until = max(win.step_backward_until, 0)
+            if framenum <= win.step_backward_until:
+                if framenum < win.step_backward_until:
+                    win.set_framenum(win.step_backward_until)
+                win.step_backward_until = None
 
         # if we're in fast-stepping mode, advance a frame
-        if win.stepForwardUntil is not None:
-            win.stepForward()
-        elif win.stepBackwardUntil is not None:
-            win.stepBackward()
+        if win.step_forward_until is not None:
+            win.step_forward()
+        elif win.step_backward_until is not None:
+            win.step_backward()
 
     def draw_overlays(self, painter, framenum):
         """
@@ -122,7 +122,7 @@ class HEVideoView(QGraphicsView):
 
         Draw any overlays on the video frame, for the current frame number.
         """
-        vc = self.window.currentVideoItem.vc
+        vc = self.window.current_video_item.vc
         if not vc.overlays:
             return
         notes = vc.notes
@@ -137,16 +137,16 @@ class HEVideoView(QGraphicsView):
             notes_framenum = framenum
 
         prefs = self.window.prefs
-        mapToDisplayVideo = vc.map
+        map_to_display_video = vc.map
 
         # draw box around juggler body
         if prefs['body'] and notes_framenum in notes['body']:
             x, y, w, h, detected = notes['body'][notes_framenum]
-            dUL_x, dUL_y = mapToDisplayVideo(x, y)
-            dLR_x, dLR_y = mapToDisplayVideo(x + w, y + h)
+            dUL_x, dUL_y = map_to_display_video(x, y)
+            dLR_x, dLR_y = map_to_display_video(x + w, y + h)
             # upper-left and lower-right points respectively:
-            bodyUL_x, bodyUL_y = self.mapToView(dUL_x, dUL_y)
-            bodyLR_x, bodyLR_y = self.mapToView(dLR_x, dLR_y)
+            bodyUL_x, bodyUL_y = self.map_to_view(dUL_x, dUL_y)
+            bodyLR_x, bodyLR_y = self.map_to_view(dLR_x, dLR_y)
             pen = QPen(Qt.blue)
             if not detected:
                 pen.setStyle(Qt.DashLine)
@@ -164,23 +164,23 @@ class HEVideoView(QGraphicsView):
                 else:
                     color = (Qt.yellow if tag.arc.hand_throw == 'right'
                              else Qt.green)
-                dcenter_x, dcenter_y = mapToDisplayVideo(tag.x, tag.y)
-                center_x, center_y = self.mapToView(dcenter_x, dcenter_y)
+                dcenter_x, dcenter_y = map_to_display_video(tag.x, tag.y)
+                center_x, center_y = self.map_to_view(dcenter_x, dcenter_y)
 
                 """
                 # style = circles surrounding balls:
-                dright_x, dright_y = mapToDisplayVideo(
+                dright_x, dright_y = map_to_display_video(
                         tag.x + tag.radius, tag.y)
-                right_x, _ = self.mapToView(dright_x, dright_y)
+                right_x, _ = self.map_to_view(dright_x, dright_y)
                 radius = right_x - center_x
                 painter.setBrush(Qt.NoBrush)
                 """
 
                 # style = filled circles inside balls:
                 marker_radius_px = 1.5 / notes['cm_per_pixel']
-                dright_x, dright_y = mapToDisplayVideo(
+                dright_x, dright_y = map_to_display_video(
                         tag.x + marker_radius_px, tag.y)
-                right_x, _ = self.mapToView(dright_x, dright_y)
+                right_x, _ = self.map_to_view(dright_x, dright_y)
                 radius = max(right_x - center_x, 2.0)
                 painter.setBrush(color)
 
@@ -190,8 +190,8 @@ class HEVideoView(QGraphicsView):
 
         # figure out which run number we're in, if any
         run_id = None
-        for i in range(self.window.viewList.count()):
-            viewitem = self.window.viewList.item(i)
+        for i in range(self.window.view_list.count()):
+            viewitem = self.window.view_list.item(i)
             if viewitem._type == 'run' and viewitem.isSelected():
                 if viewitem._startframe <= framenum <= viewitem._endframe:
                     run_id = viewitem._runindex + 1
@@ -207,15 +207,15 @@ class HEVideoView(QGraphicsView):
         # position of origin, in view coordinates
         if notes_framenum in notes['origin']:
             origin_x_px, origin_y_px = notes['origin'][notes_framenum]
-            origin_x_dv, origin_y_dv = mapToDisplayVideo(
+            origin_x_dv, origin_y_dv = map_to_display_video(
                     origin_x_px, origin_y_px)
-            origin_x, origin_y = self.mapToView(origin_x_dv, origin_y_dv)
+            origin_x, origin_y = self.map_to_view(origin_x_dv, origin_y_dv)
 
             # work out scaling from centimeters to view
             _, _, w, _, _ = notes['body'][notes_framenum]
-            temp_x_dv, temp_y_dv = mapToDisplayVideo(origin_x_px + 0.5 * w,
-                                                     origin_y_px)
-            temp_x, temp_y = self.mapToView(temp_x_dv, temp_y_dv)
+            temp_x_dv, temp_y_dv = map_to_display_video(origin_x_px + 0.5 * w,
+                                                        origin_y_px)
+            temp_x, temp_y = self.map_to_view(temp_x_dv, temp_y_dv)
             view_px_per_cm = ((temp_x - origin_x)
                               / (0.5 * w * notes['cm_per_pixel']))
 
@@ -264,23 +264,23 @@ class HEVideoView(QGraphicsView):
                 # peak location
                 arc_px_px += origin_x_px - arc_origin_x_px
                 arc_py_px += origin_y_px - arc_origin_y_px
-                d_arc_px, d_arc_py = mapToDisplayVideo(arc_px_px, arc_py_px)
-                arc_px, arc_py = self.mapToView(d_arc_px, d_arc_py)
+                d_arc_px, d_arc_py = map_to_display_video(arc_px_px, arc_py_px)
+                arc_px, arc_py = self.map_to_view(d_arc_px, d_arc_py)
                 peaks_x.append(arc_px)
                 peaks_y.append(arc_py)
 
                 # throw location
                 arc_tx_px += origin_x_px - arc_origin_x_px
                 arc_ty_px += origin_y_px - arc_origin_y_px
-                d_arc_tx, d_arc_ty = mapToDisplayVideo(arc_tx_px, arc_ty_px)
-                arc_tx, _ = self.mapToView(d_arc_tx, d_arc_ty)
+                d_arc_tx, d_arc_ty = map_to_display_video(arc_tx_px, arc_ty_px)
+                arc_tx, _ = self.map_to_view(d_arc_tx, d_arc_ty)
                 throws_x.append(arc_tx)
 
                 # catch location
                 arc_cx_px += origin_x_px - arc_origin_x_px
                 arc_cy_px += origin_y_px - arc_origin_y_px
-                d_arc_cx, d_arc_cy = mapToDisplayVideo(arc_cx_px, arc_cy_px)
-                arc_cx, _ = self.mapToView(d_arc_cx, d_arc_cy)
+                d_arc_cx, d_arc_cy = map_to_display_video(arc_cx_px, arc_cy_px)
+                arc_cx, _ = self.map_to_view(d_arc_cx, d_arc_cy)
                 catches_x.append(arc_cx)
 
             # draw items for right hand
@@ -368,8 +368,8 @@ class HEVideoView(QGraphicsView):
                                / notes['cm_per_pixel'])
 
             tx_px = origin_x_px - throw_offset_px
-            tx_dv, ty_dv = mapToDisplayVideo(tx_px, origin_y_px)
-            tx, ty = self.mapToView(tx_dv, ty_dv)
+            tx_dv, ty_dv = map_to_display_video(tx_px, origin_y_px)
+            tx, ty = self.map_to_view(tx_dv, ty_dv)
             pen = QPen(Qt.red if on_start_of_right_throw else Qt.yellow)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
@@ -377,8 +377,8 @@ class HEVideoView(QGraphicsView):
                              round(tx), round(ty + 4.0 * dy))
 
             cx_px = origin_x_px - catch_offset_px
-            cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
-            cx, cy = self.mapToView(cx_dv, cy_dv)
+            cx_dv, cy_dv = map_to_display_video(cx_px, origin_y_px)
+            cx, cy = self.map_to_view(cx_dv, cy_dv)
             pen.setColor(Qt.red if on_start_of_right_catch else Qt.yellow)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
@@ -387,8 +387,8 @@ class HEVideoView(QGraphicsView):
 
             # draw ideal throw and catch points for left hand
             tx_px = origin_x_px + throw_offset_px
-            tx_dv, ty_dv = mapToDisplayVideo(tx_px, origin_y_px)
-            tx, ty = self.mapToView(tx_dv, ty_dv)
+            tx_dv, ty_dv = map_to_display_video(tx_px, origin_y_px)
+            tx, ty = self.map_to_view(tx_dv, ty_dv)
             pen.setColor(Qt.red if on_start_of_left_throw else Qt.green)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
@@ -396,8 +396,8 @@ class HEVideoView(QGraphicsView):
                              round(tx), round(ty + 4.0 * dy))
 
             cx_px = origin_x_px + catch_offset_px
-            cx_dv, cy_dv = mapToDisplayVideo(cx_px, origin_y_px)
-            cx, cy = self.mapToView(cx_dv, cy_dv)
+            cx_dv, cy_dv = map_to_display_video(cx_px, origin_y_px)
+            cx, cy = self.map_to_view(cx_dv, cy_dv)
             pen.setColor(Qt.red if on_start_of_left_catch else Qt.green)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
@@ -428,8 +428,8 @@ class HEVideoView(QGraphicsView):
                                (arc.f_catch - arc.f_throw) /
                                (points_per_parabola - 1))
                     x, y = arc.get_position(f_point, notes)
-                    dx, dy = mapToDisplayVideo(x, y)
-                    arc_x, arc_y = self.mapToView(dx, dy)
+                    dx, dy = map_to_display_video(x, y)
+                    arc_x, arc_y = self.map_to_view(dx, dy)
                     if i == 0:
                         path.moveTo(arc_x, arc_y)
                     else:
@@ -445,7 +445,7 @@ class HEVideoView(QGraphicsView):
             """
             # draw marker of arc position
             x, y = arc.get_position(notes_framenum, notes)
-            arc_x, arc_y = self.mapToView(x, y)
+            arc_x, arc_y = self.map_to_view(x, y)
             arc_has_tag = any(
                     arc.get_distance_from_tag(tag, notes) <
                     notes['scanner_params']['max_distance_pixels']
@@ -471,11 +471,11 @@ class HEVideoView(QGraphicsView):
                         if arc2 is None:
                             continue
                         x1, y1 = arc.get_position(frame, notes)
-                        dx1, dy1 = mapToDisplayVideo(x1, y1)
-                        x1, y1 = self.mapToView(dx1, dy1)
+                        dx1, dy1 = map_to_display_video(x1, y1)
+                        x1, y1 = self.map_to_view(dx1, dy1)
                         x2, y2 = arc2.get_position(frame, notes)
-                        dx2, dy2 = mapToDisplayVideo(x2, y2)
-                        x2, y2 = self.mapToView(dx2, dy2)
+                        dx2, dy2 = map_to_display_video(x2, y2)
+                        x2, y2 = self.map_to_view(dx2, dy2)
 
                         color = (Qt.red if arc2.f_throw < arc.f_throw
                                  else Qt.blue)
@@ -492,11 +492,11 @@ class HEVideoView(QGraphicsView):
                 # draw hand's carry from previous catch, if any
                 if prefs['carries'] and arc.prev is not None:
                     xt, yt = arc.get_position(arc.f_throw, notes)
-                    dxt, dyt = mapToDisplayVideo(xt, yt)
-                    xt, yt = self.mapToView(dxt, dyt)
+                    dxt, dyt = map_to_display_video(xt, yt)
+                    xt, yt = self.map_to_view(dxt, dyt)
                     xc, yc = arc.prev.get_position(arc.prev.f_catch, notes)
-                    dxc, dyc = mapToDisplayVideo(xc, yc)
-                    xc, yc = self.mapToView(dxc, dyc)
+                    dxc, dyc = map_to_display_video(xc, yc)
+                    xc, yc = self.map_to_view(dxc, dyc)
 
                     painter.setPen(Qt.red)
                     painter.setBrush(Qt.red)
@@ -521,8 +521,8 @@ class HEVideoView(QGraphicsView):
                 try:
                     label = format(arc.throw_id, ' 4d')
                     x, y = arc.get_position(notes_framenum, notes)
-                    dx, dy = mapToDisplayVideo(x, y)
-                    arc_x, arc_y = self.mapToView(dx, dy)
+                    dx, dy = map_to_display_video(x, y)
+                    arc_x, arc_y = self.map_to_view(dx, dy)
                     painter.setOpacity(1.0)
                     painter.fillRect(arc_x+15, arc_y-5, 25, 9, Qt.black)
                     font = painter.font()
@@ -540,12 +540,12 @@ class HEVideoView(QGraphicsView):
 
         Draw the frame number in lower left corner of the viewport.
         """
-        vc = self.window.currentVideoItem.vc
+        vc = self.window.current_video_item.vc
 
         digits = 1 if framenum <= 1 else 1 + floor(log10(framenum))
         digits_max = 1 if vc.frames <= 1 else 1 + floor(log10(vc.frames - 1))
 
-        movie_lower_left_x, movie_lower_left_y = self.mapToView(
+        movie_lower_left_x, movie_lower_left_y = self.map_to_view(
                 0.0, vc.graphicsvideoitem.size().height())
         lower_left_x = max(0, movie_lower_left_x)
         lower_left_y = min(viewport.size().height(), movie_lower_left_y)
@@ -561,11 +561,11 @@ class HEVideoView(QGraphicsView):
         painter.drawText(lower_left_x + 5 + 12 * (digits_max - digits),
                          lower_left_y - 3, str(framenum))
 
-    def mapToView(self, x, y):
+    def map_to_view(self, x, y):
         """
         Map from video coordinates (pixels) to view coordinates
         """
-        vc = self.window.currentVideoItem.vc
+        vc = self.window.current_video_item.vc
 
         movie_coord = QPointF(x, y)
         scene_coord = vc.graphicsvideoitem.mapToScene(movie_coord)
@@ -583,10 +583,10 @@ class HEVideoView(QGraphicsView):
         """
         super().paintEvent(e)       # draw frame of video
 
-        if self.window is None or self.window.currentVideoItem is None:
+        if self.window is None or self.window.current_video_item is None:
             return
 
-        moviestatus = self.window.currentVideoItem.vc.player.mediaStatus()
+        moviestatus = self.window.current_video_item.vc.player.mediaStatus()
         if (moviestatus != QMediaPlayer.BufferedMedia and
                 moviestatus != QMediaPlayer.BufferingMedia and
                 moviestatus != QMediaPlayer.EndOfMedia):
@@ -607,16 +607,16 @@ class HEVideoView(QGraphicsView):
                 if scene is not None:
                     self.fitInView(scene.itemsBoundingRect(),
                                    Qt.KeepAspectRatio)
-            elif self.window.currentVideoItem is not None:
+            elif self.window.current_video_item is not None:
                 # see if the entire movie frame is now visible; if so then
                 # snap to frame
-                portRect = self.viewport().rect()
-                scenePolygon = self.mapToScene(portRect)
-                graphicsvideoitem = (self.window.currentVideoItem
+                port_rect = self.viewport().rect()
+                scene_polygon = self.mapToScene(port_rect)
+                graphicsvideoitem = (self.window.current_video_item
                                      .vc.graphicsvideoitem)
-                itemPolygon = graphicsvideoitem.mapFromScene(scenePolygon)
-                itemRect = itemPolygon.boundingRect()
-                if itemRect.contains(graphicsvideoitem.boundingRect()):
+                item_polygon = graphicsvideoitem.mapFromScene(scene_polygon)
+                item_rect = item_polygon.boundingRect()
+                if item_rect.contains(graphicsvideoitem.boundingRect()):
                     self.fitInView(graphicsvideoitem.boundingRect(),
                                    Qt.KeepAspectRatio)
                     self.window.zoomOutButton.setEnabled(False)
@@ -637,7 +637,7 @@ class HEVideoList(QListWidget):
     list.
 
     We also attach a HEVideoContext object to each item in this list, into
-    which all per-video data is stored in Hawkeye. See addVideo() below.
+    which all per-video data is stored in Hawkeye. See add_video() below.
     """
     def __init__(self, main_window):
         super().__init__(parent=main_window)
@@ -645,7 +645,10 @@ class HEVideoList(QListWidget):
         self.setAcceptDrops(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
 
-    def addVideo(self, filepath):
+    def add_video(self, filepath: str):
+        """
+        Add the video at the given path to the HEVideoList.
+        """
         if not os.path.isfile(filepath):
             return None
 
@@ -661,7 +664,7 @@ class HEVideoList(QListWidget):
         # signal worker to process the video
         self.window.sig_process_video.emit(filepath, item.vc.analyze_on_add)
         self.window.worker_processing_queue_length += 1
-        self.window.setWorkerBusyIcon()
+        self.window.set_worker_busy_icon()
         return item
 
     # -------------------------------------------------------------------------
@@ -682,8 +685,8 @@ class HEVideoList(QListWidget):
         paths.sort(key=lambda p: os.path.basename(p))
 
         for path in paths:
-            workerfree = not self.window.isWorkerBusy()
-            self.addVideo(path).setSelected(workerfree)
+            workerfree = not self.window.is_worker_busy()
+            self.add_video(path).setSelected(workerfree)
 
     def sizeHint(self):
         return QSize(150, 100)
@@ -705,14 +708,14 @@ class HEVideoContext(QObject):
 
         self.player = QMediaPlayer(parent=self.window,
                                    flags=QMediaPlayer.VideoSurface)
-        self.player.stateChanged.connect(self.mediaStateChanged)
-        self.player.error.connect(self.handlePlayerError)
+        self.player.stateChanged.connect(self.on_media_state_change)
+        self.player.error.connect(self.on_player_error)
 
         self.graphicsvideoitem = QGraphicsVideoItem()
         self.graphicsscene = QGraphicsScene(parent=self.window.view)
         self.graphicsscene.addItem(self.graphicsvideoitem)
         self.graphicsvideoitem.nativeSizeChanged.connect(
-                self.videoNativeSizeChanged)
+                self.on_video_native_size_change)
 
         self.player.setVideoOutput(self.graphicsvideoitem)
 
@@ -727,57 +730,57 @@ class HEVideoContext(QObject):
         self.frames = None              # frames number from 0 to frames-1
         self.processing_step = 0        # for progress bar during scanning
         self.processing_steps_total = 0
-        self.has_played = False         # see note in HEMainWindow.playMovie()
+        self.has_played = False         # see note in HEMainWindow.play_movie()
         self.map = None         # see HEMainWindow.on_worker_displayvid_done()
         self.overlays = True            # whether to draw video overlays
         self.error = None               # any error string(s) reported
         self.analyze_on_add = self.window.prefs['auto_analyze']
 
-    def mediaStateChanged(self, state):
+    def on_media_state_change(self, state):
         """
         Signaled by the QMediaPlayer when the state of the media changes from
         paused to playing, and vice versa.
         """
-        if self.isActive():
+        if self.is_active():
             if self.player.state() == QMediaPlayer.PlayingState:
-                self.window.playButton.setIcon(
+                self.window.play_button.setIcon(
                         self.window.style().standardIcon(QStyle.SP_MediaPause))
             else:
-                self.window.playButton.setIcon(
+                self.window.play_button.setIcon(
                         self.window.style().standardIcon(QStyle.SP_MediaPlay))
 
     @Slot()
-    def handlePlayerError(self):
+    def on_player_error(self):
         """
         Called by the media player when there is an error.
         """
-        if self.isActive():
-            self.window.playButton.setEnabled(False)
+        if self.is_active():
+            self.window.play_button.setEnabled(False)
             err = self.player.errorString()
             code = self.player.error()
-            self.window.playerErrorLabel.setText(f'Error: {err} (code {code})')
+            self.window.error_label.setText(f'Error: {err} (code {code})')
 
     @Slot(int)
-    def videoNativeSizeChanged(self, size):
+    def on_video_native_size_change(self, size):
         """
         Signaled when the video size changes.
         """
         self.graphicsvideoitem.setSize(size)
 
-        if self.isActive():
+        if self.is_active():
             self.window.view.fitInView(self.graphicsvideoitem.boundingRect(),
                                        Qt.KeepAspectRatio)
-            self.window.zoomInButton.setEnabled(True)
-            self.window.zoomOutButton.setEnabled(False)
+            self.window.zoomin_button.setEnabled(True)
+            self.window.zoomout_button.setEnabled(False)
             self.window.view.videosnappedtoframe = True
 
-    def isActive(self):
+    def is_active(self):
         """
         Returns True if this video is currently active in the main window,
         False otherwise.
         """
-        return (self.window.currentVideoItem is not None
-                and self.window.currentVideoItem.vc is self)
+        return (self.window.current_video_item is not None
+                and self.window.current_video_item.vc is self)
 
 
 # -----------------------------------------------------------------------------
@@ -810,9 +813,9 @@ class HETableViewDelegate(QStyledItemDelegate):
     def paint(self, painter, item, index):
         super().paint(painter, item, index)
         if index.row() in self.boundary_indices:
-            oldPen = painter.pen()
+            old_pen = painter.pen()
             painter.setPen(self.pen)
             painter.drawLine(item.rect.topLeft(), item.rect.topRight())
-            painter.setPen(oldPen)
+            painter.setPen(old_pen)
 
 # -----------------------------------------------------------------------------
