@@ -238,21 +238,21 @@ class HEMainWindow(QMainWindow):
         self.error_label = QLabel()
         self.error_label.setSizePolicy(QSizePolicy.Preferred,
                                        QSizePolicy.Maximum)
-        aboutButton = QToolButton()
-        aboutButton.setIcon(QIcon(
+        about_button = QToolButton()
+        about_button.setIcon(QIcon(
                 os.path.join(base_dir, 'resources/about_icon.png')))
-        aboutButton.setIconSize(QSize(20, 20))
-        aboutButton.setStyleSheet('border: none;')
-        aboutButton.clicked.connect(self.show_about)
-        prefsButton = QToolButton()
-        prefsButton.setIcon(QIcon(
+        about_button.setIconSize(QSize(20, 20))
+        about_button.setStyleSheet('border: none;')
+        about_button.clicked.connect(self.show_about)
+        prefs_button = QToolButton()
+        prefs_button.setIcon(QIcon(
                 os.path.join(base_dir, 'resources/preferences_icon.png')))
-        prefsButton.setIconSize(QSize(20, 20))
-        prefsButton.setStyleSheet('border: none;')
-        prefsButton.clicked.connect(self.show_prefs)
+        prefs_button.setIconSize(QSize(20, 20))
+        prefs_button.setStyleSheet('border: none;')
+        prefs_button.clicked.connect(self.show_prefs)
         errorbar_layout.addWidget(self.error_label)
-        errorbar_layout.addWidget(aboutButton)
-        errorbar_layout.addWidget(prefsButton)
+        errorbar_layout.addWidget(about_button)
+        errorbar_layout.addWidget(prefs_button)
 
         player_layout = QVBoxLayout()
         # layout_right_player.setContentsMargins(0, 10, 0, 0)
