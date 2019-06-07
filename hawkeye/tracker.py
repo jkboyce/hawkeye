@@ -1,4 +1,4 @@
-# HEVideoScanner.py
+# tracker.py
 #
 # Class to extract features from a juggling video.
 #
@@ -14,21 +14,21 @@ from statistics import median, mean
 import numpy as np
 import cv2
 
-from HETypes import Balltag, Ballarc
+from hawkeye.types import Balltag, Ballarc
 
 
-class HEVideoScanner:
+class VideoScanner:
     """
     This class uses OpenCV to process juggling video, determining ball
     movements, juggler positions, and other high-level features. A typical use
     of this is something like:
 
-        scanner = HEVideoScanner('video.mp4')
+        scanner = VideoScanner('video.mp4')
         scanner.process()
         notes = scanner.notes
         print('found {} runs in video'.format(notes['runs']))
 
-    Scanning occurs in five distinct steps, and optionally you can specify
+    Scanning occurs in six distinct steps, and optionally you can specify
     which steps to do (default is all), and whether to write results to
     disk after processing.
 
@@ -130,7 +130,7 @@ class HEVideoScanner:
                 coordinates to the original.
             params(dict, optional):
                 Parameters to configure the scanner. The function
-                HEVideoScanner.default_scanner_params() returns a dict of the
+                VideoScanner.default_scanner_params() returns a dict of the
                 expected format.
             notes(dict, optional):
                 Notes dictionary for recording data into
@@ -139,12 +139,12 @@ class HEVideoScanner:
         """
         if notes is None:
             self.notes = dict()
-            self.notes['version'] = HEVideoScanner.CURRENT_NOTES_VERSION
+            self.notes['version'] = VideoScanner.CURRENT_NOTES_VERSION
             self.notes['source'] = os.path.abspath(filename)
             self.notes['scanvideo'] = (os.path.abspath(scanvideo)
                                        if scanvideo is not None else None)
             self.notes['scanner_params'] = (
-                    HEVideoScanner.default_scanner_params()
+                    VideoScanner.default_scanner_params()
                     if params is None else params)
             self.notes['step'] = 0
         else:
@@ -209,7 +209,7 @@ class HEVideoScanner:
             if readnotes:
                 _notespath = os.path.join(_notesdir, '{}_notes{}.pkl'.format(
                                           basename_noext, step_start - 1))
-                self.notes = HEVideoScanner.read_notes(_notespath)
+                self.notes = VideoScanner.read_notes(_notespath)
         else:
             step_start = 1
 
@@ -237,7 +237,7 @@ class HEVideoScanner:
                 _notespath = os.path.join(_notesdir,
                                           '{}_notes.pkl'.format(
                                             basename_noext))
-            HEVideoScanner.write_notes(self.notes, _notespath)
+            VideoScanner.write_notes(self.notes, _notespath)
         if self._verbosity >= 1:
             print('Video scanner done')
 
@@ -261,7 +261,7 @@ class HEVideoScanner:
 
         cap = cv2.VideoCapture(notes['source'])
         if not cap.isOpened():
-            raise HEScanException("Error opening video file {}".format(
+            raise ScannerException("Error opening video file {}".format(
                 notes['source']))
 
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -314,7 +314,7 @@ class HEVideoScanner:
 
             cap = cv2.VideoCapture(notes['source'])
             if not cap.isOpened():
-                raise HEScanException("Error opening video file {}".format(
+                raise ScannerException("Error opening video file {}".format(
                     notes['source']))
 
             scan_framewidth, scan_frameheight = framewidth, frameheight
@@ -324,7 +324,7 @@ class HEVideoScanner:
 
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
-                raise HEScanException(f'Error opening video file {scanvideo}')
+                raise ScannerException(f'Error opening video file {scanvideo}')
 
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -1490,14 +1490,14 @@ class HEVideoScanner:
         if scanvideo is None:
             cap = cv2.VideoCapture(notes['source'])
             if not cap.isOpened():
-                raise HEScanException("Error opening video file {}".format(
+                raise ScannerException("Error opening video file {}".format(
                     notes['source']))
 
             scan_framewidth, scan_frameheight = framewidth, frameheight
         else:
             cap = cv2.VideoCapture(scanvideo)
             if not cap.isOpened():
-                raise HEScanException(f'Error opening video file {scanvideo}')
+                raise ScannerException(f'Error opening video file {scanvideo}')
 
             scan_framewidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             scan_frameheight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -2430,7 +2430,7 @@ class HEVideoScanner:
         """
         Returns a dictionary with constants that configure Hawkeye's video
         scanner. Optionally you can pass a dictionary of this type to the
-        HEVideoScanner initializer as 'params'. In most cases the defaults
+        VideoScanner initializer as 'params'. In most cases the defaults
         should work pretty well.
 
         The 'high res' values apply when the frame height is greater than or
@@ -2526,7 +2526,7 @@ class HEVideoScanner:
 
 # -----------------------------------------------------------------------------
 
-class HEScanException(Exception):
+class ScannerException(Exception):
     def __init__(self, message=None):
         super().__init__(message)
 
@@ -2675,8 +2675,7 @@ def play_video(filename, notes=None, outfilename=None, startframe=0,
 
 # -----------------------------------------------------------------------------
 
-# This entry point isn't used by the Hawkeye application but is useful for
-# testing and debugging the video scanner.
+# This entry point is useful for testing and debugging the video scanner.
 
 if __name__ == '__main__':
 
@@ -2711,7 +2710,7 @@ if __name__ == '__main__':
                                                             notes_step)
             _filepath_notes = os.path.join(_hawkeye_dir, _basename_notes)
 
-            mynotes = HEVideoScanner.read_notes(_filepath_notes)
+            mynotes = VideoScanner.read_notes(_filepath_notes)
         else:
             mynotes = None
 
@@ -2724,7 +2723,7 @@ if __name__ == '__main__':
         endstep = 6
         verbosity = 2
 
-        scanner = HEVideoScanner(_filename, scanvideo=_scanvideo)
+        scanner = VideoScanner(_filename, scanvideo=_scanvideo)
         scanner.process(steps=(startstep, endstep), readnotes=True,
                         writenotes=True, notesdir='__Hawkeye__',
                         verbosity=verbosity)

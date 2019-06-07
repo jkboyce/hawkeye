@@ -1,4 +1,4 @@
-# HEWorker.py
+# worker.py
 #
 # Hawkeye worker thread for analyzing and transcoding videos.
 #
@@ -14,7 +14,7 @@ import json
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
-from HEVideoScanner import HEVideoScanner, HEScanException
+from hawkeye.tracker import VideoScanner, ScannerException
 
 
 class HEWorker(QObject):
@@ -122,8 +122,8 @@ class HEWorker(QObject):
             need_notes = True
             notes_path = fileinfo['notes_path']
             if os.path.isfile(notes_path):
-                notes = HEVideoScanner.read_notes(notes_path)
-                if notes['version'] == HEVideoScanner.CURRENT_NOTES_VERSION:
+                notes = VideoScanner.read_notes(notes_path)
+                if notes['version'] == VideoScanner.CURRENT_NOTES_VERSION:
                     need_notes = False
                 else:
                     # old version of notes file -> delete and create a new one
@@ -132,11 +132,15 @@ class HEWorker(QObject):
                     os.remove(notes_path)
 
             if need_notes:
-                scanner = HEVideoScanner(file_path,
-                                         scanvideo=fileinfo['scanvid_path'])
+                scanner = VideoScanner(file_path,
+                                       scanvideo=fileinfo['scanvid_path'])
                 notes = scanner.notes
 
-                if self.get_video_metadata(fileinfo, notes) != 0:
+                try:
+                    retcode = self.get_video_metadata(fileinfo, notes)
+                except Exception as e:
+                    print(f'metadata exception: {e}')
+                if retcode != 0:
                     raise HEProcessingException()
                 """
                 OpenCV-based alternative for line above:
@@ -223,9 +227,9 @@ class HEWorker(QObject):
                 if self.make_scan_video(fileinfo) != 0:
                     raise HEProcessingException()
 
-                scanner = HEVideoScanner(file_path,
-                                         scanvideo=fileinfo['scanvid_path'],
-                                         notes=notes)
+                scanner = VideoScanner(file_path,
+                                       scanvideo=fileinfo['scanvid_path'],
+                                       notes=notes)
                 if self.run_scanner(fileinfo, scanner, steps=(first_step, 6),
                                     writenotes=True) != 0:
                     raise HEProcessingException()
@@ -357,7 +361,7 @@ class HEWorker(QObject):
         3. frames per second (float)
         4. frame count (int)
 
-        This function replaces step 1 in HEVideoScanner, which gets this data
+        This function replaces step 1 in VideoScanner, which gets this data
         using OpenCV. We use FFprobe here because it may handle a wider
         variety of input formats, and it reports information not accessible
         through the OpenCV API such as display aspect ratio (DAR).
@@ -379,11 +383,11 @@ class HEWorker(QObject):
             if platform.system() == 'Windows':
                 ffprobe_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging\\windows')
+                        'resources\\windows')
             elif platform.system() == 'Darwin':
                 ffprobe_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging/osx')
+                        'resources/osx')
             elif platform.system() == 'Linux':
                 ffprobe_dir = '/usr/local/bin'   # fill this in JKB
         ffprobe_executable = os.path.join(ffprobe_dir, 'ffprobe')
@@ -462,7 +466,7 @@ class HEWorker(QObject):
             self.sig_output.emit(file_id,
                                  f'estimated frame count = {framecount}\n\n')
 
-            # fill in the same notes fields as HEVideoScanner's step 1
+            # fill in the same notes fields as VideoScanner's step 1
             notes['fps'] = fps
             notes['frame_width'] = width
             notes['frame_height'] = height
@@ -646,11 +650,11 @@ class HEWorker(QObject):
             if platform.system() == 'Windows':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging\\windows')
+                        'resources\\windows')
             elif platform.system() == 'Darwin':
                 ffmpeg_dir = os.path.join(
                         os.path.dirname(os.path.realpath(__file__)),
-                        'packaging/osx')
+                        'resources/osx')
             elif platform.system() == 'Linux':
                 ffmpeg_dir = '/usr/local/bin'   # fill this in JKB
         ffmpeg_executable = os.path.join(ffmpeg_dir, 'ffmpeg')
@@ -713,7 +717,7 @@ class HEWorker(QObject):
             self.sig_output.emit(file_id, s)
         sys.stdout = HEOutputHandler(callback=output_callback)
 
-        # Define a callback function to pass in to HEVideoScanner.process()
+        # Define a callback function to pass in to VideoScanner.process()
         # below. Processing takes a long time (seconds to minutes) and the
         # scanner will call this function at irregular intervals.
 
@@ -723,7 +727,7 @@ class HEWorker(QObject):
 
             # Release the GIL periodically so that video drawing operations
             # don't get blocked for too long during processing.
-            # HEVideoScanner's step 2 isn't a problem because most of that time
+            # VideoScanner's step 2 isn't a problem because most of that time
             # is spent in OpenCV so the GIL is mostly free. Steps 3+ though are
             # all Python code (and those also happen to correspond to
             # maxsteps==0), so we periodically sleep during those steps.
@@ -739,7 +743,7 @@ class HEWorker(QObject):
             scanner.process(steps=steps,
                             writenotes=writenotes, notesdir=hawkeye_dir,
                             callback=processing_callback, verbosity=2)
-        except HEScanException as err:
+        except ScannerException as err:
             self.sig_output.emit(file_id,
                                  '\n####### Error during scanning #######\n')
             self.sig_output.emit(file_id,

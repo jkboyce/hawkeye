@@ -1,4 +1,4 @@
-# HEMainWindow.py
+# mainwindow.py
 #
 # Hawkeye application window.
 #
@@ -21,9 +21,9 @@ from PySide2.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QPushButton,
                                QSpacerItem)
 from PySide2.QtMultimedia import QMediaContent, QMediaPlayer, QSoundEffect
 
-from HEWorker import HEWorker
-from HEWidgets import (HEVideoView, HEVideoList, HEViewList,
-                       HETableViewDelegate)
+from hawkeye.worker import HEWorker
+from hawkeye.widgets import (HEVideoView, HEVideoList, HEViewList,
+                             HETableViewDelegate)
 
 
 CURRENT_APP_VERSION = "1.2"

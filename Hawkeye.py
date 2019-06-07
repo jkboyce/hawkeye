@@ -7,7 +7,7 @@
 import sys
 from PySide2.QtWidgets import QApplication
 
-from HEMainWindow import HEMainWindow
+from hawkeye.mainwindow import HEMainWindow
 
 
 if __name__ == '__main__':

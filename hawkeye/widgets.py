@@ -1,4 +1,4 @@
-# HEWidgets.py
+# widgets.py
 #
 # Custom Qt widgets for the Hawkeye application.
 #

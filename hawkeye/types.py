@@ -1,6 +1,6 @@
-# HETypes.py
+# types.py
 #
-# Data types used by Hawkeye to describe/annotate juggling videos.
+# Data types used by the throw scanner to describe/annotate juggling videos.
 #
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
