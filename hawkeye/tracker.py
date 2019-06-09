@@ -165,7 +165,7 @@ class VideoScanner:
         Args:
             steps((int, int) tuple, optional):
                 Starting and finishing step numbers to execute. Default is
-                (1, 5), or all steps.
+                (1, 6), or all steps.
             readnotes(bool, optional):
                 Should the notes dictionary be read from disk prior to
                 processing.
