@@ -35,8 +35,8 @@ class HEWorker(QObject):
     We put this worker in a separate QObject and use signals and slots to
     communicate with it, so that we can do these time-consuming operations on a
     thread separate from the main event loop. The signal/slot mechanism is a
-    thread-safe way to communicate in Qt. Look in HEMainWindow.startWorker() to
-    see how this thread is initiated and signals and slots connected.
+    thread-safe way to communicate in Qt. Look in HEMainWindow.start_worker()
+    to see how this thread is initiated and signals and slots connected.
     """
 
     # signal output from processing
