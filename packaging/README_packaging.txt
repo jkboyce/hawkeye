@@ -7,9 +7,7 @@ Anaconda (I use version 3.3.1 but others will likely work).
 The two .spec files in subdirectories here are used by Pyinstaller to make
 the respective executables. Pyinstaller doesn't do a perfect job of
 identifying dependencies, so the .spec files specify a handful of files we
-add to/remove from the build. For simplicity I keep everything that
-Pyinstaller *doesn't* pick up located in the directories here so the .spec
-files can easily include them.
+add to/remove from the build.
 
 Build instructions on OS X:
 
