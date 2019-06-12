@@ -1625,8 +1625,17 @@ class VideoScanner:
         nms_threshold = 0.4
 
         # configuration parameters
-        body_frame_interval = 1     # stride for doing detections
-        yolo_batch_size = 1
+        #
+        # Quick benchmark on a quad-core desktop PC shows a small benefit
+        # to a batch size of 4:
+        #     batch_size  fps
+        #          1      20.3
+        #          2      22.1
+        #          4      24.1*
+        #          8      23.9
+        #         16      23.2
+        body_frame_interval = 2     # stride for doing detections
+        yolo_batch_size = 4
         yolo_scale = 0.00392        # scale RGB from 0-255 to 0.0-1.0
 
         framecount = notes['frame_count']
@@ -1665,6 +1674,12 @@ class VideoScanner:
                                               (0, 0, 0), True, crop=False)
                 net.setInput(blob)
                 outs = net.forward(output_layers)
+                # DNN module treats batch size of 1 differently:
+                if yolo_batch_size > 1:
+                    outs = outs[0]
+
+                # print(f'blob shape: {blob.shape}, '
+                #       f'outs shape: {np.shape(outs)}')
 
                 # Process network outputs. The first four elements of
                 # `detection` define a bounding box, the rest is a
@@ -2554,6 +2569,8 @@ class VideoScanner:
         _dirname = os.path.dirname(_filepath)
         if not os.path.exists(_dirname):
             os.makedirs(_dirname)
+        if os.path.exists(_filepath):
+            os.remove(_filepath)
 
         with open(_filepath, 'wb') as handle:
             pickle.dump(notes, handle, protocol=pickle.HIGHEST_PROTOCOL)
