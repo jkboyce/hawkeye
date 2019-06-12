@@ -1441,8 +1441,7 @@ class VideoScanner:
     def detect_juggler(self, display=False):
         """
         Find coordinates of the juggler's body in each frame of the video
-        containing juggling, and store in the self.notes dictionary. The
-        YOLOv2-tiny neural network is used to recognize the juggler.
+        containing juggling, and store in the self.notes dictionary.
 
         Args:
             display(bool, optional):
@@ -1469,22 +1468,20 @@ class VideoScanner:
         for framenum in range(notes['frame_count']):
             if arc_count[framenum] > 0:
                 arc_xaverage[framenum] /= arc_count[framenum]
-        body_frames_to_scan = sum(1 for count in arc_count if count > 0)
+        body_frames_total = sum(1 for count in arc_count if count > 0)
 
         if self._verbosity >= 2:
-            print(f'Processing {body_frames_to_scan} out of '
+            print(f'Processing {body_frames_total} out of '
                   f'{notes["frame_count"]} frames containing juggling')
-        if body_frames_to_scan == 0:
+        if body_frames_total == 0:
             if self._verbosity >= 2:
                 print('Nothing to scan, exiting...')
             if self._verbosity >= 1:
                 print('Juggler detection done\n')
             return
 
-        fps = notes['fps']
         framewidth = notes['frame_width']
         frameheight = notes['frame_height']
-        framecount = notes['frame_count_estimate']
         scanvideo = notes['scanvideo']
 
         if scanvideo is None:
@@ -1511,6 +1508,98 @@ class VideoScanner:
             orig_y = scan_y * scan_scaledown
             return orig_x, orig_y
 
+        body_average = None
+        body_frames_to_average = int(round(
+                notes['fps'] *
+                notes['scanner_params']['body_averaging_time_window_secs']))
+        body_frames_averaged = 0
+        body_frames_processed = 0
+        body_frames_with_detections = 0
+        framenum = 0
+
+        for det_bbox, det_framenum in self.get_detections(cap, arc_count,
+                                                          arc_xaverage,
+                                                          display):
+            if det_framenum > framenum + body_frames_to_average:
+                # skipping too far ahead; reset average
+                body_average = None
+
+            while framenum <= det_framenum:
+                if arc_count[framenum] == 0:
+                    framenum += 1
+                    continue        # nothing to do this frame
+
+                if framenum == det_framenum:
+                    if body_average is None:
+                        body_average = det_bbox
+                        body_frames_averaged = 1
+                    else:
+                        body_frames_averaged = min(body_frames_to_average,
+                                                   body_frames_averaged + 1)
+                        temp2 = 1 / body_frames_averaged
+                        temp1 = 1.0 - temp2
+                        x, y, w, h = det_bbox
+                        body_average = (body_average[0] * temp1 + x * temp2,
+                                        body_average[1] * temp1 + y * temp2,
+                                        body_average[2] * temp1 + w * temp2,
+                                        body_average[3] * temp1 + h * temp2)
+                    body_frames_with_detections += 1
+
+                if body_average is not None:
+                    body_x, body_y = scan_to_video_coord(body_average[0],
+                                                         body_average[1])
+                    body_w = body_average[2] * scan_scaledown
+                    body_h = body_average[3] * scan_scaledown
+
+                    notes['body'][framenum] = (body_x, body_y, body_w, body_h,
+                                               framenum == det_framenum)
+
+                body_frames_processed += 1
+                framenum += 1
+
+            if self._callback is not None:
+                self._callback(body_frames_processed, body_frames_total)
+
+        cap.release()
+
+        if self._verbosity >= 1:
+            print(f'Juggler detection done: Found juggler in '
+                  f'{body_frames_with_detections} out of '
+                  f'{body_frames_total} frames\n')
+
+    def get_detections(self, cap, arc_count, arc_xaverage, display):
+        """
+        Iterate over successive juggler detections from the video.
+
+        The YOLOv2-tiny neural network is used to recognize the juggler.
+
+        Args:
+            cap(OpenCV VideoCapture object):
+                stream of frames
+            arc_count(list of ints):
+                number of arcs present in a given frame number of the video
+            arc_xaverage(list of floats):
+                when arc_count>0, average x-value of arcs present
+            display(bool):
+                if True then show video in a window while processing
+        Yields:
+            Tuples of the form ((x, y, w, h), framenum), where the first part
+            is the bounding box in the video frame
+
+        """
+        notes = self.notes
+
+        if display:
+            cv2.namedWindow(notes['source'])
+
+            def draw_YOLO_detection(img, class_id, color,
+                                    x, y, x_plus_w, y_plus_h, confidence):
+                label = f'{str(classes[class_id])} {confidence:.2f}'
+                cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
+                cv2.putText(img, label, (x-10, y-10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        # initialize YOLO network
         if getattr(sys, 'frozen', False):
             # we are running in a bundle
             base_dir = sys._MEIPASS
@@ -1518,7 +1607,6 @@ class VideoScanner:
             # we are running in a normal Python environment
             base_dir = os.path.dirname(os.path.realpath(__file__))
 
-        # initialize YOLO network
         YOLO_classes_file = os.path.join(base_dir,
                                          'resources/yolo-classes.txt')
         YOLO_weights_file = os.path.join(base_dir,
@@ -1536,26 +1624,18 @@ class VideoScanner:
         conf_threshold = 0.5
         nms_threshold = 0.4
 
-        if display:
-            cv2.namedWindow(notes['source'])
+        # configuration parameters
+        body_frame_interval = 1     # stride for doing detections
+        yolo_batch_size = 1
+        yolo_scale = 0.00392        # scale RGB from 0-255 to 0.0-1.0
 
-            def draw_YOLO_detection(img, class_id, color,
-                                    x, y, x_plus_w, y_plus_h, confidence):
-                label = f'{str(classes[class_id])} {confidence:.2f}'
-                cv2.rectangle(img, (x, y), (x_plus_w, y_plus_h), color, 2)
-                cv2.putText(img, label, (x-10, y-10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
+        framecount = notes['frame_count']
+        last_frame_to_scan = max(frame for frame in range(framecount)
+                                 if arc_count[frame] > 0)
         framenum = framereads = 0
-        body_frames_scanned = 0
-        frames_with_detections = 0
-
-        body_average = None
-        body_frames_to_average = int(round(
-                fps *
-                notes['scanner_params']['body_averaging_time_window_secs']))
-        body_frames_averaged = 0
-        frames_with_no_body = 0
+        prev_frame_scanned = None
+        frames = []
+        metadata = []
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -1563,153 +1643,108 @@ class VideoScanner:
 
             if not ret:
                 if framereads > framecount:
-                    break
+                    return
                 continue
 
-            if arc_count[framenum] > 0:
-                width = frame.shape[1]
-                height = frame.shape[0]
-                scale = 0.00392     # scale RGB from 0-255 to 0.0-1.0
+            scan_this_frame = (arc_count[framenum] > 0 and
+                               (prev_frame_scanned is None
+                                or (framenum - prev_frame_scanned) >=
+                                body_frame_interval))
 
+            if scan_this_frame:
+                frames.append(frame)
+                metadata.append((frame.shape[1], frame.shape[0], framenum))
+                prev_frame_scanned = framenum
+
+            run_batch = (len(frames) == yolo_batch_size or
+                         framenum == last_frame_to_scan)
+
+            if run_batch:
                 # run the YOLO network to identify objects
-                blob = cv2.dnn.blobFromImage(frame, scale, (416, 416),
-                                             (0, 0, 0), True, crop=False)
+                blob = cv2.dnn.blobFromImages(frames, yolo_scale, (416, 416),
+                                              (0, 0, 0), True, crop=False)
                 net.setInput(blob)
                 outs = net.forward(output_layers)
 
-                class_ids = []
-                confidences = []
-                boxes = []
-
                 # Process network outputs. The first four elements of
-                # `detection` define a bounding box, the rest is a vector of
-                # class probabilities.
-                for out in outs:
+                # `detection` define a bounding box, the rest is a
+                # vector of class probabilities.
+                for index, out in enumerate(outs):
+                    class_ids = []
+                    confidences = []
+                    boxes = []
+
+                    bf_width, bf_height, bf_framenum = metadata[index]
+
                     for detection in out:
                         scores = detection[5:]
                         class_id = np.argmax(scores)
                         confidence = scores[class_id]
                         if confidence > conf_threshold:
-                            center_x = int(detection[0] * width)
-                            center_y = int(detection[1] * height)
-                            w = int(detection[2] * width)
-                            h = int(detection[3] * height)
+                            center_x = int(detection[0] * bf_width)
+                            center_y = int(detection[1] * bf_height)
+                            w = int(detection[2] * bf_width)
+                            h = int(detection[3] * bf_height)
                             x = center_x - w / 2
                             y = center_y - h / 2
                             class_ids.append(class_id)
                             confidences.append(float(confidence))
                             boxes.append([x, y, w, h])
 
-                # Do non-maximum suppression on boxes we detected. This in
-                # effect de-duplicates the detection events and produces a
-                # single bounding box for each.
-                kept_indices = cv2.dnn.NMSBoxes(boxes, confidences,
-                                                conf_threshold, nms_threshold)
+                    # Do non-maximum suppression on boxes we detected.
+                    # This in effect de-duplicates the detection events
+                    # and produces a single bounding box for each.
+                    kept_indices = cv2.dnn.NMSBoxes(boxes, confidences,
+                                                    conf_threshold,
+                                                    nms_threshold)
 
-                # Pick out the people detections. For some reason NMSBoxes
-                # wraps each index into a single-element list.
-                person_indices = [elem[0] for elem in kept_indices
-                                  if str(classes[class_ids[elem[0]]])
-                                  == 'person']
+                    # Pick out the people detections. For some reason
+                    # NMSBoxes wraps each index into a single-element list.
+                    person_indices = [elem[0] for elem in kept_indices
+                                      if str(classes[class_ids[elem[0]]])
+                                      == 'person']
 
-                best_person = None
-                if len(person_indices) == 1:
-                    best_person = person_indices[0]
-                elif len(person_indices) > 1:
-                    # multiple people, decide on the best one
-                    if body_average is not None:
-                        # find detection closest to body average
-                        def center_distance(a, b):
-                            ax, ay, aw, ah = a
-                            bx, by, bw, bh = b
-                            dx = (ax + aw / 2) - (bx + bw / 2)
-                            dy = (ay + ah / 2) - (by + bh / 2)
-                            return sqrt(dx * dx + dy * dy)
-
-                        def dist(i):
-                            return center_distance(body_average, boxes[i])
-                    else:
-                        # find detection closest to centerline of juggling
+                    best_person = None
+                    if len(person_indices) == 1:
+                        best_person = person_indices[0]
+                    elif len(person_indices) > 1:
+                        # multiple people, pick one closest to centerline
+                        # of juggling
                         def dist(i):
                             return abs(boxes[i][0] + 0.5 * boxes[i][2]
                                        - arc_xaverage[framenum])
 
-                    best_person = min((index for index in person_indices),
-                                      key=dist)
+                        best_person = min(person_indices, key=dist)
 
-                if display:
-                    for elem in kept_indices:
-                        index = elem[0]
-                        class_id = class_ids[index]
-                        color = ((0, 255, 255) if index == best_person
-                                 else (0, 255, 0))
-                        x, y, w, h = boxes[index]
-                        confidence = confidences[index]
-                        draw_YOLO_detection(frame, class_id, color,
-                                            round(x), round(y),
-                                            round(x+w), round(y+h),
-                                            confidence)
-
-                if best_person is not None:
-                    x, y, w, h = boxes[best_person]
-                    frames_with_no_body = 0
-                    if body_average is None:
-                        body_average = (x, y, w, h)
-                        body_frames_averaged = 1
-                    else:
-                        body_frames_averaged = min(body_frames_to_average,
-                                                   body_frames_averaged + 1)
-                        temp2 = 1 / body_frames_averaged
-                        temp1 = 1.0 - temp2
-                        body_average = (body_average[0] * temp1 + x * temp2,
-                                        body_average[1] * temp1 + y * temp2,
-                                        body_average[2] * temp1 + w * temp2,
-                                        body_average[3] * temp1 + h * temp2)
-                else:
-                    frames_with_no_body += 1
-
-                if (body_average is not None and
-                        frames_with_no_body < body_frames_to_average):
-                    body_x, body_y = scan_to_video_coord(body_average[0],
-                                                         body_average[1])
-                    body_w = body_average[2] * scan_scaledown
-                    body_h = body_average[3] * scan_scaledown
-
-                    notes['body'][framenum] = (body_x, body_y, body_w, body_h,
-                                               frames_with_no_body == 0)
                     if display:
-                        x = int(round(body_average[0]))
-                        y = int(round(body_average[1]))
-                        w = int(round(body_average[2]))
-                        h = int(round(body_average[3]))
-                        cv2.rectangle(frame, (x, y), (x + w, y + h),
-                                      (255, 0, 0), 2)
+                        frame = frames[index]
 
-                body_frames_scanned += 1
+                        for elem in kept_indices:
+                            index = elem[0]
+                            class_id = class_ids[index]
+                            color = ((0, 255, 255) if index == best_person
+                                     else (0, 255, 0))
+                            x, y, w, h = boxes[index]
+                            confidence = confidences[index]
+                            draw_YOLO_detection(frame, class_id, color,
+                                                round(x), round(y),
+                                                round(x+w), round(y+h),
+                                                confidence)
 
-                if best_person is not None:
-                    frames_with_detections += 1
+                        cv2.imshow(notes['source'], frame)
+                        if cv2.waitKey(10) & 0xFF == ord('q'):
+                            return
 
-                if display:
-                    cv2.imshow(notes['source'], frame)
-                    if cv2.waitKey(10) & 0xFF == ord('q'):  # Q exits
-                        break
-            else:
-                body_average = None
+                    if best_person is not None:
+                        yield (boxes[best_person], bf_framenum)
+
+                frames = []
+                metadata = []
 
             framenum += 1
 
-            if self._callback is not None:
-                self._callback(body_frames_scanned, body_frames_to_scan)
-
-        cap.release()
         if display:
             cv2.destroyAllWindows()
-
-        if self._verbosity >= 1:
-            print(f'Juggler detection done: Found juggler in '
-                  f'{frames_with_detections} out of '
-                  f'{body_frames_to_scan} frames\n')
 
     # --------------------------------------------------------------------------
     #  Step 6: Analyze juggling patterns
