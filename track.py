@@ -5,6 +5,7 @@
 # Copyright 2019 Jack Boyce (jboyce@gmail.com)
 
 import os
+from timeit import default_timer as timer
 
 from hawkeye.tracker import VideoScanner, play_video
 
@@ -52,11 +53,14 @@ if __name__ == '__main__':
         play_video(_filename, notes=mynotes, outfilename=None,
                    startframe=start_frame, keywait=True)
     else:
-        startstep = 1
-        endstep = 2
+        startstep = 5
+        endstep = 6
         verbosity = 2
 
+        start = timer()
         scanner = VideoScanner(_filename, scanvideo=_scanvideo)
         scanner.process(steps=(startstep, endstep), readnotes=True,
                         writenotes=True, notesdir='__Hawkeye__',
                         verbosity=verbosity)
+        end = timer()
+        print(f'{end - start} seconds elapsed')
