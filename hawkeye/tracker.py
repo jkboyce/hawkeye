@@ -1457,6 +1457,7 @@ class VideoScanner:
 
         # Figure out which frame numbers to scan. To save time we'll only
         # process frames that contain juggling.
+
         arc_count = [0] * notes['frame_count']
         arc_xaverage = [0] * notes['frame_count']
         for arc in notes['arcs']:
@@ -1470,15 +1471,24 @@ class VideoScanner:
                 arc_xaverage[framenum] /= arc_count[framenum]
         body_frames_total = sum(1 for count in arc_count if count > 0)
 
+        # For speed we don't run the detector on every frame. Aim for a
+        # detection rate of around 15 Hertz.
+        stride = max(1, int(round(notes['fps'] / 15)))
+
         if self._verbosity >= 2:
             print(f'Processing {body_frames_total} out of '
-                  f'{notes["frame_count"]} frames containing juggling')
+                  f'{notes["frame_count"]} frames containing juggling '
+                  f'(stride = {stride})')
         if body_frames_total == 0:
             if self._verbosity >= 2:
                 print('Nothing to scan, exiting...')
             if self._verbosity >= 1:
                 print('Juggler detection done\n')
             return
+
+        # Open the capture stream and work out scaling function to map
+        # the (potentially rescaled) scanning video back to the original
+        # video's coordinates.
 
         framewidth = notes['frame_width']
         frameheight = notes['frame_height']
@@ -1508,10 +1518,14 @@ class VideoScanner:
             orig_y = scan_y * scan_scaledown
             return orig_x, orig_y
 
-        body_average = None
+        # variables for scanning loop
         body_frames_to_average = int(round(
-                notes['fps'] *
-                notes['scanner_params']['body_averaging_time_window_secs']))
+                notes['fps']
+                * notes['scanner_params']['body_averaging_time_window_secs']
+                / stride))
+        if body_frames_to_average < 1:
+            body_frames_to_average = 1
+        body_average = None
         body_frames_averaged = 0
         body_frames_processed = 0
         body_frames_with_detections = 0
@@ -1519,8 +1533,8 @@ class VideoScanner:
 
         for det_bbox, det_framenum in self.get_detections(cap, arc_count,
                                                           arc_xaverage,
-                                                          display):
-            if det_framenum > framenum + body_frames_to_average:
+                                                          stride=stride):
+            if det_framenum > framenum + body_frames_to_average*stride:
                 # skipping too far ahead; reset average
                 body_average = None
 
@@ -1567,7 +1581,8 @@ class VideoScanner:
                   f'{body_frames_with_detections} out of '
                   f'{body_frames_total} frames\n')
 
-    def get_detections(self, cap, arc_count, arc_xaverage, display):
+    def get_detections(self, cap, arc_count, arc_xaverage, stride=1,
+                       display=False):
         """
         Iterate over successive juggler detections from the video.
 
@@ -1575,12 +1590,14 @@ class VideoScanner:
 
         Args:
             cap(OpenCV VideoCapture object):
-                stream of frames
+                video stream of frames
             arc_count(list of ints):
                 number of arcs present in a given frame number of the video
             arc_xaverage(list of floats):
                 when arc_count>0, average x-value of arcs present
-            display(bool):
+            stride(int, optional):
+                spacing between successive frames during detection
+            display(bool, optional):
                 if True then show video in a window while processing
         Yields:
             Tuples of the form ((x, y, w, h), framenum), where the first part
@@ -1599,7 +1616,8 @@ class VideoScanner:
                 cv2.putText(img, label, (x-10, y-10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        # initialize YOLO network
+        # Initialize YOLO network
+
         if getattr(sys, 'frozen', False):
             # we are running in a bundle
             base_dir = sys._MEIPASS
@@ -1623,8 +1641,9 @@ class VideoScanner:
                          for i in net.getUnconnectedOutLayers()]
         conf_threshold = 0.5
         nms_threshold = 0.4
+        yolo_scale = 0.00392        # scale RGB from 0-255 to 0.0-1.0
 
-        # configuration parameters
+        # Number of images to send through the network at a time.
         #
         # Quick benchmark on a quad-core desktop PC shows a small benefit
         # to a batch size of 4:
@@ -1634,9 +1653,7 @@ class VideoScanner:
         #          4      24.1*
         #          8      23.9
         #         16      23.2
-        body_frame_interval = 2     # stride for doing detections
         yolo_batch_size = 4
-        yolo_scale = 0.00392        # scale RGB from 0-255 to 0.0-1.0
 
         framecount = notes['frame_count']
         last_frame_to_scan = max(frame for frame in range(framecount)
@@ -1657,8 +1674,7 @@ class VideoScanner:
 
             scan_this_frame = (arc_count[framenum] > 0 and
                                (prev_frame_scanned is None
-                                or (framenum - prev_frame_scanned) >=
-                                body_frame_interval))
+                                or (framenum - prev_frame_scanned) >= stride))
 
             if scan_this_frame:
                 frames.append(frame)
@@ -1674,8 +1690,9 @@ class VideoScanner:
                                               (0, 0, 0), True, crop=False)
                 net.setInput(blob)
                 outs = net.forward(output_layers)
-                # DNN module treats batch size of 1 differently:
-                if yolo_batch_size > 1:
+                # DNN module returns a differently-shaped output for
+                # batch sizes > 1:
+                if len(frames) > 1:
                     outs = outs[0]
 
                 # print(f'blob shape: {blob.shape}, '
