@@ -1282,7 +1282,7 @@ class HEMainWindow(QMainWindow):
                                                   QDir.homePath())
         if filename != '':
             filepath = os.path.abspath(filename)
-            lastitem = self.video_list.addVideo(filepath)
+            lastitem = self.video_list.add_video(filepath)
             if lastitem is not None:
                 lastitem.setSelected(True)
 
