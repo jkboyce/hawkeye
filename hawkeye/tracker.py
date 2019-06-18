@@ -1682,7 +1682,7 @@ class VideoScanner:
                 prev_frame_scanned = framenum
 
             run_batch = (len(frames) == yolo_batch_size or
-                         framenum == last_frame_to_scan)
+                         (framenum == last_frame_to_scan and len(frames) > 0))
 
             if run_batch:
                 # run the YOLO network to identify objects
