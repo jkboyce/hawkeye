@@ -16,7 +16,7 @@ dependencies:
   - libiconv=1.15=hfa6e2cd_1005
   - liblapack=3.8.0=7_mkl
   - libpng=1.6.37=h2a8f88b_0
-  - libtiff=4.0.10=h36446d0_1001
+  - libtiff=4.0.10
   - libwebp=1.0.2=hfa6e2cd_2
   - libxml2=2.9.9=h9ce36c8_0
   - libxslt=1.1.32=heafd4d3_1002
