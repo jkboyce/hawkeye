@@ -286,6 +286,8 @@ class HEWorker(QObject):
         dh, dm = divmod(dm, 60)
         duration_str = f'{dh:02.0f}:{dm:02.0f}:{ds:02.3f}'
 
+        rotation_str = 'rotate=' + str(round(notes['camera_tilt'] * 10000)) + '/10000'
+
         # run FFmpeg to make the clip. An alternative approach is to use the
         # "copy" codec to avoid re-encoding the streams, but we would have to
         # take care to start on a keyframe. I haven't found an easy way to do
@@ -293,6 +295,7 @@ class HEWorker(QObject):
         args = ['-i', file_path,
                 '-ss', starttime_str,
                 '-t', duration_str,
+                '-vf', rotation_str,
                 '-c:a', 'aac',              # re-encode audio as AAC
                 '-c:v', 'libx264',          # re-encode video as H.264/mp4
                 '-preset', 'veryfast',
