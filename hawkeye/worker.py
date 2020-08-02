@@ -11,6 +11,7 @@ import time
 import subprocess
 import platform
 import json
+from math import gcd
 
 from PySide2.QtCore import QObject, QThread, Signal, Slot
 
@@ -439,26 +440,36 @@ class HEWorker(QObject):
 
             width_orig = int(video_metadata['width'])
             height = int(video_metadata['height'])
-            framecount = int(video_metadata['nb_frames'])
-            fps_raw = str(video_metadata['avg_frame_rate'])
-            dar = video_metadata['display_aspect_ratio']
 
             # The input video might have non-square pixels, which is a problem
             # for us in the visual analysis. Later we will use FFmpeg's scaler
             # to create scan and display videos with square pixels (i.e.
             # SAR=1:1). Here we use the DAR to calculate what the pixel width
             # will be when we scale to square pixels.
-            dar_parts = dar.split(':')
-            width = height * int(dar_parts[0]) // int(dar_parts[1])
+            if 'display_aspect_ratio' in video_metadata:
+            	dar = video_metadata['display_aspect_ratio']
+            	dar_parts = dar.split(':')
+            	width = height * int(dar_parts[0]) // int(dar_parts[1])
+            else:
+            	# assume square pixels
+            	width = width_orig
+            	k = gcd(width, height)
+            	dar = f'{width // k}:{height // k}'
 
             # the fps response can either be in numeric form like '30' or
             # '59.94', or in rational form like '60000/1001'. In any case we
             # want fps as a float.
+            fps_raw = str(video_metadata['avg_frame_rate'])
             if '/' in fps_raw:
                 fps_parts = fps_raw.split('/')
                 fps = float(fps_parts[0]) / float(fps_parts[1])
             else:
                 fps = float(fps_raw)
+
+            if 'nb_frames' in video_metadata:
+            	framecount = int(video_metadata['nb_frames'])
+            else:
+            	framecount = round(float(video_metadata['duration']) * fps)
 
             self.sig_output.emit(file_id, f'height = {height}\n')
             self.sig_output.emit(
