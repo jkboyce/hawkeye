@@ -8,7 +8,7 @@ import sys
 import os
 import pickle
 import copy
-from math import sqrt, exp, isnan, atan, degrees, sin, cos
+from math import sqrt, exp, isnan, atan, degrees, sin, cos, floor, ceil
 from statistics import median, mean
 
 import numpy as np
@@ -1807,6 +1807,7 @@ class VideoScanner:
         # Analyze each run in turn. All run-related information is stored in
         # a dictionary called run_dict.
         notes['run'] = list()
+        neworigin = dict()
         for run_id, run in enumerate(runs, start=1):
             # assign sequence numbers
             for throw_id, arc in enumerate(sorted(
@@ -1848,8 +1849,15 @@ class VideoScanner:
 
             notes['run'].append(run_dict)
 
+            # keep body origin coordinates only for frames in a run
+            for f in range(floor(f_firstthrow), ceil(f_lastcatch) + 1):
+                if f in notes['origin']:
+                    neworigin[f] = notes['origin'][f]
+
             if self._callback is not None:
                 self._callback()
+
+        notes['origin'] = neworigin
 
         if self._verbosity >= 2:
             print('--------------------------------------------')
@@ -1918,6 +1926,12 @@ class VideoScanner:
                     notes['body'][framenum] = (x, y, w, h, False)
                     bodies_added += 1
                     # print(f'added body to frame {framenum}')
+                elif last_body is not None:
+                    notes['body'][framenum] = last_body
+                    bodies_added += 1
+                else:
+                    if self._verbosity >= 2:
+                        print(f'   problem adding body location to frame {framenum}')
 
             x, y, w, _, _ = notes['body'][framenum]
 
