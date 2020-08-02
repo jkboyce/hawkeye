@@ -447,14 +447,14 @@ class HEWorker(QObject):
             # SAR=1:1). Here we use the DAR to calculate what the pixel width
             # will be when we scale to square pixels.
             if 'display_aspect_ratio' in video_metadata:
-            	dar = video_metadata['display_aspect_ratio']
-            	dar_parts = dar.split(':')
-            	width = height * int(dar_parts[0]) // int(dar_parts[1])
+                dar = video_metadata['display_aspect_ratio']
+                dar_parts = dar.split(':')
+                width = height * int(dar_parts[0]) // int(dar_parts[1])
             else:
-            	# assume square pixels
-            	width = width_orig
-            	k = gcd(width, height)
-            	dar = f'{width // k}:{height // k}'
+                # assume square pixels
+                width = width_orig
+                k = gcd(width, height)
+                dar = f'{width // k}:{height // k}'
 
             # the fps response can either be in numeric form like '30' or
             # '59.94', or in rational form like '60000/1001'. In any case we
@@ -467,9 +467,9 @@ class HEWorker(QObject):
                 fps = float(fps_raw)
 
             if 'nb_frames' in video_metadata:
-            	framecount = int(video_metadata['nb_frames'])
+                framecount = int(video_metadata['nb_frames'])
             else:
-            	framecount = round(float(video_metadata['duration']) * fps)
+                framecount = round(float(video_metadata['duration']) * fps)
 
             self.sig_output.emit(file_id, f'height = {height}\n')
             self.sig_output.emit(
