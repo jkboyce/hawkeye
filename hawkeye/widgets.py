@@ -619,7 +619,7 @@ class HEVideoView(QGraphicsView):
                 if item_rect.contains(graphicsvideoitem.boundingRect()):
                     self.fitInView(graphicsvideoitem.boundingRect(),
                                    Qt.KeepAspectRatio)
-                    self.window.zoomOutButton.setEnabled(False)
+                    self.window.zoomout_button.setEnabled(False)
                     self.videosnappedtoframe = True
                     self.setDragMode(QGraphicsView.NoDrag)
 
