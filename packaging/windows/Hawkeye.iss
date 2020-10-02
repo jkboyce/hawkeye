@@ -3,8 +3,8 @@
 ;This file will be executed next to the application bundle image
 
 #define MyAppName "Hawkeye"
-#define MyAppVersion "1.2"
-#define MyAppYear "2019"
+#define MyAppVersion "1.3"
+#define MyAppYear "2020"
 #define MyAppExeName "Hawkeye.exe"
 #define MyAppIconsName "Hawkeye.ico"
 #define MyWizardImageFileName "Hawkeye-setup-icon.bmp"

@@ -26,8 +26,8 @@ from hawkeye.widgets import (HEVideoView, HEVideoList, HEViewList,
                              HETableViewDelegate)
 
 
-CURRENT_APP_VERSION = "1.2"
-COPYRIGHT_YEAR = "2019"
+CURRENT_APP_VERSION = "1.3"
+COPYRIGHT_YEAR = "2020"
 
 
 class HEMainWindow(QMainWindow):
