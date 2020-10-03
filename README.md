@@ -9,12 +9,12 @@ The goal of Hawkeye is to help jugglers understand their form and improve their 
 practice video easily and efficiently.
 
 ### Application downloads
-[Hawkeye-1.2.dmg](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.2.dmg) -- Mac OS X (Mac OS 10.11 or above)
+[Hawkeye-1.3.dmg](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.3.dmg) -- Mac OS X (Mac OS 10.11 or above)
 _(Note: If launching the app gives an "identity of the developer cannot be confirmed" message, right-click on the
 app and select Open, then select Open in the dialog box. After it launches successfully the warning message won't
 appear again.)_
 
-[Hawkeye-1.2.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.2.exe) -- Windows installer. _(Note: If you get
+[Hawkeye-1.3.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.3.exe) -- Windows installer. _(Note: If you get
 playback errors in the Hawkeye video player, it is likely you need to install video codecs on your computer. I
 recommend the free [K-Lite Codec Pack Standard](https://codecguide.com/download_k-lite_codec_pack_standard.htm).)_
 
