@@ -283,6 +283,37 @@ class HEVideoView(QGraphicsView):
                 arc_cx, _ = self.map_to_view(d_arc_cx, d_arc_cy)
                 catches_x.append(arc_cx)
 
+            # draw black boxes underneath right/left hand overlays
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(Qt.black)
+            painter.setOpacity(1.0)
+
+            if len(throws_right_x) > 1:
+                center_x = mean(throws_right_x)
+                dx = stdev(throws_right_x)
+                painter.drawRect(round(center_x - dx), round(origin_y + dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            if len(catches_right_x) > 1:
+                center_x = mean(catches_right_x)
+                dx = stdev(catches_right_x)
+                painter.drawRect(round(center_x - dx),
+                                 round(origin_y - 2.0 * dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            if len(throws_left_x) > 1:
+                center_x = mean(throws_left_x)
+                dx = stdev(throws_left_x)
+                painter.drawRect(round(center_x - dx), round(origin_y + dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
+            if len(catches_left_x) > 1:
+                center_x = mean(catches_left_x)
+                dx = stdev(catches_left_x)
+                painter.drawRect(round(center_x - dx),
+                                 round(origin_y - 2.0 * dy),
+                                 round(2.0 * dx), round(2.0 * dy))
+
             # draw items for right hand
             pen = QPen(Qt.yellow)
             pen.setStyle(Qt.DashLine)
@@ -297,8 +328,6 @@ class HEVideoView(QGraphicsView):
                 radius_y = stdev(peaks_right_y)
                 painter.drawEllipse(QPoint(center_x, center_y),
                                     radius_x, radius_y)
-
-            painter.setBrush(Qt.black)
 
             if len(throws_right_x) > 1:
                 center_x = mean(throws_right_x)
@@ -326,8 +355,6 @@ class HEVideoView(QGraphicsView):
                 radius_y = stdev(peaks_left_y)
                 painter.drawEllipse(QPoint(center_x, center_y),
                                     radius_x, radius_y)
-
-            painter.setBrush(Qt.black)
 
             if len(throws_left_x) > 1:
                 center_x = mean(throws_left_x)
