@@ -50,11 +50,11 @@ class HEMainWindow(QMainWindow):
 
         self.prefs = {
             'markers': False,
-            'throw_labels': True,
+            'throw_labels': False,
             'parabolas': True,
             'carries': True,
-            'ideal_points': True,
-            'accuracy_overlay': True,
+            'ideal_points': False,
+            'accuracy_overlay': False,
             'body': False,
             'throw_sounds': False,
             'resolution': 'Actual size',
