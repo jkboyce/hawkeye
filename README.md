@@ -12,7 +12,7 @@ practice video easily and efficiently.
 [Hawkeye-1.3.dmg](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.3.dmg) -- macOS application (macOS 10.11 and above).
 _(Note: If launching the app gives an "identity of the developer cannot be confirmed" message, right-click on the
 app and select Open, then select Open in the dialog box. After it launches successfully the warning message won't
-appear again.)_
+appear again.)_ **This macOS binary does not work on Apple silicon Macs (M1, M2). A fix is on the way.**
 
 [Hawkeye-1.3.exe](https://storage.googleapis.com/hawkeye-dl/Hawkeye-1.3.exe) -- Windows installer. _(Note: If you get
 playback errors in the Hawkeye video player, it is likely you need to install video codecs on your computer. I
